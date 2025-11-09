@@ -52,7 +52,7 @@ export class OrderManager {
     // Store in database
     const { data, error } = await supabase
       .from("orders")
-      .insert(order)
+      .insert([order])
       .select()
       .single()
 
