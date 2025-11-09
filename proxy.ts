@@ -67,8 +67,46 @@ export async function proxy(request: NextRequest) {
 
   // Handle protected routes
   if (isProtectedRoute || isAdminRoute) {
-    if (!user) {
-      // For API routes, return JSON error
+    // For dashboard routes, allow wallet-authenticated users (no Supabase session required)
+    if (path.startsWith("/dashboard")) {
+      // Check if user has wallet connected (via localStorage - accessible via cookie check)
+      const walletAddress = request.cookies.get("walletAddress")?.value
+      
+      // If no Supabase user and no wallet, redirect to login
+      if (!user && !walletAddress) {
+        const url = request.nextUrl.clone()
+        url.pathname = "/auth/login"
+        return NextResponse.redirect(url)
+      }
+      
+      // Wallet or Supabase authenticated - allow access to dashboard
+      // Skip role checks for wallet-only auth on dashboard
+      if (user) {
+        // Supabase user - check roles
+        const { data: userData, error } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", user.id)
+          .single()
+
+        if (error || !userData) {
+          // If role not found but wallet is connected, allow access
+          if (!walletAddress) {
+            const url = request.nextUrl.clone()
+            url.pathname = "/auth/login"
+            return NextResponse.redirect(url)
+          }
+        } else {
+          // Check admin access for Supabase users
+          if (isAdminRoute && userData.role !== UserRole.ADMIN) {
+            const url = request.nextUrl.clone()
+            url.pathname = "/dashboard"
+            return NextResponse.redirect(url)
+          }
+        }
+      }
+    } else if (!user) {
+      // For API routes and other protected routes (non-dashboard), require Supabase auth
       if (path.startsWith("/api/")) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
       }
@@ -76,72 +114,69 @@ export async function proxy(request: NextRequest) {
       const url = request.nextUrl.clone()
       url.pathname = "/auth/login"
       return NextResponse.redirect(url)
-    }
+    } else {
+      // For non-dashboard protected routes with Supabase user, check roles
+      const { data: userData, error } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id)
+        .single()
 
-    // Get user role from database
-    const { data: userData, error } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", user.id)
-      .single()
-
-    if (error || !userData) {
-      if (path.startsWith("/api/")) {
-        return NextResponse.json({ error: "User role not found" }, { status: 403 })
+      if (error || !userData) {
+        if (path.startsWith("/api/")) {
+          return NextResponse.json({ error: "User role not found" }, { status: 403 })
+        }
+        const url = request.nextUrl.clone()
+        url.pathname = "/auth/login"
+        return NextResponse.redirect(url)
       }
-      const url = request.nextUrl.clone()
-      url.pathname = "/auth/login"
-      return NextResponse.redirect(url)
-    }
 
-    // Check admin access
-    if (isAdminRoute && userData.role !== UserRole.ADMIN) {
-      if (path.startsWith("/api/")) {
-        return NextResponse.json({ error: "Admin access required" }, { status: 403 })
+      // Check admin access
+      if (isAdminRoute && userData.role !== UserRole.ADMIN) {
+        if (path.startsWith("/api/")) {
+          return NextResponse.json({ error: "Admin access required" }, { status: 403 })
+        }
+        const url = request.nextUrl.clone()
+        url.pathname = "/dashboard"
+        return NextResponse.redirect(url)
       }
-      const url = request.nextUrl.clone()
-      url.pathname = "/dashboard"
-      return NextResponse.redirect(url)
-    }
 
-    // For routes requiring wallet authentication
-    // Note: Wallet signature verification should be handled in the API route itself
-    // since it requires browser APIs that aren't available in middleware
-    if (path.startsWith("/api/orders") || path.startsWith("/api/trades")) {
-      const walletSignature = request.headers.get("x-wallet-signature")
-      if (!walletSignature) {
-        return NextResponse.json({ error: "Wallet signature required" }, { status: 401 })
+      // For routes requiring wallet authentication
+      if (path.startsWith("/api/orders") || path.startsWith("/api/trades")) {
+        const walletSignature = request.headers.get("x-wallet-signature")
+        if (!walletSignature) {
+          return NextResponse.json({ error: "Wallet signature required" }, { status: 401 })
+        }
       }
-      // Signature validation will be done in the API route handler
-    }
 
-    // Attach user info to request headers
-    const authenticatedUser: AuthenticatedUser = {
-      id: user.id,
-      role: userData.role as UserRole,
-      walletAddress: user.user_metadata?.wallet_address,
-    }
+      // Attach user info to request headers for Supabase-authenticated users
+      const authenticatedUser: AuthenticatedUser = {
+        id: user.id,
+        role: userData.role as UserRole,
+        walletAddress: user.user_metadata?.wallet_address,
+      }
 
-    // Clone request headers and append authenticated user info
-    const requestHeaders = new Headers(request.headers)
-    requestHeaders.set("x-user-id", authenticatedUser.id)
-    requestHeaders.set("x-user-role", authenticatedUser.role)
-    if (authenticatedUser.walletAddress) {
-      requestHeaders.set("x-wallet-address", authenticatedUser.walletAddress)
-    }
+      const requestHeaders = new Headers(request.headers)
+      requestHeaders.set("x-user-id", authenticatedUser.id)
+      requestHeaders.set("x-user-role", authenticatedUser.role)
+      if (authenticatedUser.walletAddress) {
+        requestHeaders.set("x-wallet-address", authenticatedUser.walletAddress)
+      }
 
-    // Update response with modified headers
-    supabaseResponse = NextResponse.next({
-      request: {
-        headers: requestHeaders,
-      },
-    })
+      supabaseResponse = NextResponse.next({
+        request: {
+          headers: requestHeaders,
+        },
+      })
+    }
   }
 
   // Redirect authenticated users away from auth pages
+
+  const walletAddress = request.cookies.get("walletAddress")?.value
   if (
     (path.startsWith("/auth/login") || path.startsWith("/auth/sign-up")) &&
-    user
+    (user || walletAddress)
   ) {
     const url = request.nextUrl.clone()
     url.pathname = "/dashboard"

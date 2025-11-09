@@ -10,21 +10,32 @@ import { Wallet } from "lucide-react"
 export default function LoginPage() {
   const { connect, connected, address, isConnecting, error, walletType } = useWallet()
   const router = useRouter()
-  const [isRedirecting, setIsRedirecting] = useState(false)
+  const [hasRedirected, setHasRedirected] = useState(false)
 
   useEffect(() => {
-    if (connected && address && !isRedirecting) {
-      setIsRedirecting(true)
-      // Small delay to show connection success
-      setTimeout(() => {
-        router.push("/dashboard")
-      }, 500)
+    if (connected && address && !hasRedirected) {
+      console.log("[Login] Wallet connected, preparing redirect...", { connected, address, hasRedirected })
+      setHasRedirected(true)
+      // Small delay to ensure cookies are set and UI updates
+      const redirectTimer = setTimeout(() => {
+        console.log("[Login] Redirecting to dashboard...")
+        // Force a full page navigation to ensure cookies are sent
+        window.location.href = "/dashboard"
+      }, 1500)
+      
+      return () => clearTimeout(redirectTimer)
     }
-  }, [connected, address, router, isRedirecting])
+  }, [connected, address, hasRedirected])
 
   const handleMetaMaskConnect = async () => {
     try {
       await connect("metamask")
+      // Redirect after connection - cookie is set, state will update via useEffect
+      // Also add direct redirect as backup
+      setTimeout(() => {
+        console.log("[Login] Redirecting to dashboard after MetaMask connection")
+        window.location.href = "/dashboard"
+      }, 1200)
     } catch (err) {
       console.error("MetaMask connection error:", err)
     }
@@ -33,6 +44,10 @@ export default function LoginPage() {
   const handleWalletConnect = async () => {
     try {
       await connect("walletconnect")
+      setTimeout(() => {
+        console.log("[Login] Redirecting to dashboard after WalletConnect connection")
+        window.location.href = "/dashboard"
+      }, 1200)
     } catch (err) {
       console.error("WalletConnect connection error:", err)
     }
@@ -40,6 +55,10 @@ export default function LoginPage() {
 
   const handleDemoMode = async () => {
     await connect("demo")
+    setTimeout(() => {
+      console.log("[Login] Redirecting to dashboard after demo mode")
+      window.location.href = "/dashboard"
+    }, 1000)
   }
 
   return (
@@ -73,7 +92,7 @@ export default function LoginPage() {
                     <p className="text-xs text-muted-foreground mt-2">
                       Mode: {walletType === "demo" ? "Demo" : walletType === "metamask" ? "MetaMask" : "WalletConnect"}
                     </p>
-                    {isRedirecting && (
+                    {hasRedirected && (
                       <p className="text-xs text-muted-foreground mt-2 animate-pulse">
                         Redirecting to dashboard...
                       </p>

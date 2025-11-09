@@ -11,48 +11,48 @@ export function MetaMaskErrorHandler() {
     // Suppress console errors from MetaMask for non-existent methods
     const originalConsoleError = console.error
     const originalConsoleWarn = console.warn
+    const originalConsoleLog = console.log
+    
+    // List of MetaMask error patterns to suppress
+    const suppressPatterns = [
+      "isDefaultWallet",
+      "getEnabledChains",
+      "does not exist / is not available",
+      "ethereum.send",
+      "MetaMask - RPC Error",
+      "deprecated and may be removed"
+    ]
+    
+    const shouldSuppress = (message: any): boolean => {
+      const messageStr = String(message?.message || message || "")
+      return suppressPatterns.some(pattern => messageStr.includes(pattern))
+    }
     
     console.error = (...args: any[]) => {
-      const message = args[0]?.message || args[0] || ""
-      const errorString = String(message)
-      
-      // Suppress MetaMask RPC errors for non-existent methods
-      if (
-        errorString.includes("isDefaultWallet") ||
-        errorString.includes("getEnabledChains") ||
-        errorString.includes("does not exist / is not available") ||
-        errorString.includes("ethereum.send")
-      ) {
+      if (shouldSuppress(args[0])) {
         return // Suppress these errors
       }
-      
       originalConsoleError.apply(console, args)
     }
 
     console.warn = (...args: any[]) => {
-      const message = args[0]?.message || args[0] || ""
-      const errorString = String(message)
-      
-      // Suppress MetaMask deprecation warnings
-      if (
-        errorString.includes("ethereum.send") ||
-        errorString.includes("isDefaultWallet") ||
-        errorString.includes("getEnabledChains")
-      ) {
+      if (shouldSuppress(args[0])) {
         return // Suppress these warnings
       }
-      
       originalConsoleWarn.apply(console, args)
+    }
+
+    console.log = (...args: any[]) => {
+      // Also suppress MetaMask logs
+      if (shouldSuppress(args[0])) {
+        return
+      }
+      originalConsoleLog.apply(console, args)
     }
 
     // Handle unhandled promise rejections from MetaMask
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
-      const error = event.reason
-      if (
-        error?.message?.includes("isDefaultWallet") ||
-        error?.message?.includes("getEnabledChains") ||
-        error?.message?.includes("does not exist / is not available")
-      ) {
+      if (shouldSuppress(event.reason)) {
         event.preventDefault() // Suppress the error
       }
     }
@@ -62,6 +62,7 @@ export function MetaMaskErrorHandler() {
     return () => {
       console.error = originalConsoleError
       console.warn = originalConsoleWarn
+      console.log = originalConsoleLog
       window.removeEventListener("unhandledrejection", handleUnhandledRejection)
     }
   }, [])

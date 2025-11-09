@@ -29,6 +29,16 @@ export function PortfolioSummary() {
       setMetrics(data)
     } catch (error) {
       console.error("Failed to load portfolio metrics:", error)
+      // Set default values on error to prevent UI from breaking
+      setMetrics({
+        portfolio_value: 0,
+        total_cost_basis: 0,
+        unrealized_pnl: 0,
+        total_trades: 0,
+        winning_trades: 0,
+        win_rate: 0,
+        holdings_count: 0,
+      })
     } finally {
       setLoading(false)
     }

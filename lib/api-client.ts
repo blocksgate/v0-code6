@@ -9,11 +9,17 @@ export async function apiRequest<T>(endpoint: string, options: RequestInit = {})
       "Content-Type": "application/json",
       ...options.headers,
     },
+    credentials: "include", // Include cookies for authentication
   })
 
   if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error || `API request failed: ${response.status}`)
+    try {
+      const error = await response.json()
+      throw new Error(error.error || error.message || `API request failed: ${response.status}`)
+    } catch (e) {
+      // If response is not JSON, throw generic error
+      throw new Error(`API request failed: ${response.status} ${response.statusText}`)
+    }
   }
 
   return response.json()

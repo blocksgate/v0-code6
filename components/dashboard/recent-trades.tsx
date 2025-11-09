@@ -28,6 +28,8 @@ export function RecentTrades() {
       setTrades(data.trades || [])
     } catch (error) {
       console.error("Failed to load trades:", error)
+      // Set empty array on error to prevent UI crash
+      setTrades([])
     } finally {
       setLoading(false)
     }

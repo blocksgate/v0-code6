@@ -15,8 +15,25 @@ export async function GET(request: NextRequest) {
 
     if (tokenId) {
       // Get single token price
-      const price = await priceFeed.getPrice(tokenId)
-      return NextResponse.json({ token: tokenId, price })
+      try {
+        const price = await priceFeed.getPrice(tokenId)
+        return NextResponse.json({ 
+          token: tokenId, 
+          price,
+          change_24h: 0, // Add 24h change if needed
+          timestamp: Date.now()
+        })
+      } catch (error) {
+        console.error(`Failed to fetch price for ${tokenId}:`, error)
+        // Return mock data to prevent UI breaks
+        return NextResponse.json({ 
+          token: tokenId, 
+          price: 0,
+          change_24h: 0,
+          timestamp: Date.now(),
+          error: "Failed to fetch price from provider"
+        })
+      }
     }
 
     if (tokens.length > 0) {
@@ -40,14 +57,16 @@ export async function GET(request: NextRequest) {
       try {
         prices[token] = await priceFeed.getPrice(token)
       } catch (error) {
+        console.error(`Failed to fetch price for ${token}:`, error)
         prices[token] = 0
       }
     }
 
     return NextResponse.json({ prices })
   } catch (error) {
+    console.error("[Prices API] Error:", error)
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to fetch prices" },
+      { error: error instanceof Error ? error.message : "Failed to fetch prices", price: 0 },
       { status: 500 },
     )
   }

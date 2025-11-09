@@ -1,23 +1,37 @@
-import { createClient } from "@/lib/supabase/server"
 import { type NextRequest, NextResponse } from "next/server"
+import { authenticateRequest } from "@/lib/supabase/wallet-auth"
+import { createClient } from "@/lib/supabase/server"
 
 export async function GET(request: NextRequest) {
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
+  const auth = await authenticateRequest(request)
+  
+  if (!auth) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
   try {
+    // For wallet-only users, return mock/demo data
+    if (auth.isWalletOnly) {
+      return NextResponse.json({
+        portfolio_value: 0,
+        total_cost_basis: 0,
+        unrealized_pnl: 0,
+        total_trades: 0,
+        winning_trades: 0,
+        win_rate: 0,
+        holdings_count: 0,
+        message: "Wallet-only mode: Connect with email to track portfolio history"
+      })
+    }
+
+    // Supabase authenticated user - fetch from database
+    const supabase = await createClient()
+    
     // Get portfolio data
     const { data: portfolio, error: portfolioError } = await supabase
       .from("portfolios")
       .select("*")
-      .eq("user_id", user.id)
+      .eq("user_id", auth.userId)
 
     if (portfolioError) throw portfolioError
 
@@ -25,7 +39,7 @@ export async function GET(request: NextRequest) {
     const { data: trades, error: tradesError } = await supabase
       .from("trades")
       .select("*")
-      .eq("user_id", user.id)
+      .eq("user_id", auth.userId)
       .eq("status", "completed")
 
     if (tradesError) throw tradesError
