@@ -1,10 +1,10 @@
-import { supabase } from "../supabase/client"
+import { supabase } from "./supabase/client"
 import type {
   PriceBar,
   PriceHistory,
   PriceHistoryProvider,
   HistoricalPriceOptions,
-} from "../types/price-history"
+} from "./types/price-history"
 
 export class DatabasePriceHistoryProvider implements PriceHistoryProvider {
   async getPriceHistory(
@@ -35,7 +35,7 @@ export class DatabasePriceHistoryProvider implements PriceHistoryProvider {
 
       if (error) throw error
 
-      const bars = data?.map(row => ({
+      const bars = data?.map((row: Record<string, any>) => ({
         timestamp: new Date(row.timestamp).getTime(),
         open: parseFloat(row.open),
         high: parseFloat(row.high),

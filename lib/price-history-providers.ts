@@ -2,9 +2,9 @@ import axios from "axios"
 import type {
   PriceHistoryProvider,
   PriceHistory,
-  HistoricalPriceOptions,
-  PriceHistoryError
-} from "../types/price-history"
+  HistoricalPriceOptions
+} from "./types/price-history"
+import { PriceHistoryError } from "./types/price-history"
 
 export class CoinGeckoPriceHistoryProvider implements PriceHistoryProvider {
   private readonly baseUrl = "https://api.coingecko.com/api/v3"

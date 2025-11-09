@@ -54,22 +54,23 @@ class RpcMonitor extends EventEmitter {
     }
   }
 
-  getMetrics(options?: {
+  getMetrics(options: {
     functionName?: string
     since?: number
     onlyErrors?: boolean
-  }): RpcMetrics[] {
+  } = {}): RpcMetrics[] {
     let filtered = this.metrics
 
-    if (options?.functionName) {
+    if (options.functionName) {
       filtered = filtered.filter(m => m.functionName === options.functionName)
     }
 
-    if (options?.since) {
-      filtered = filtered.filter(m => m.timestamp >= options.since)
+    const since = options.since
+    if (since !== undefined) {
+      filtered = filtered.filter(m => m.timestamp >= since)
     }
 
-    if (options?.onlyErrors) {
+    if (options.onlyErrors) {
       filtered = filtered.filter(m => !m.success)
     }
 

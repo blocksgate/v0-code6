@@ -1,15 +1,13 @@
 import type { Database } from "./supabase"
 
-export type RpcError = {
-  message: string
-  details: string
-  hint?: string
-  code: string
-}
-
 export type RpcResponse<T> = {
   data: T | null
-  error: RpcError | null
+  error: {
+    message: string
+    details: string
+    hint?: string
+    code: string
+  } | null
 }
 
 export type DailyPnLArgs = Database["public"]["Functions"]["get_daily_pnl"]["Args"]
