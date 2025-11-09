@@ -10,6 +10,8 @@ export function MetaMaskErrorHandler() {
   useEffect(() => {
     // Suppress console errors from MetaMask for non-existent methods
     const originalConsoleError = console.error
+    const originalConsoleWarn = console.warn
+    
     console.error = (...args: any[]) => {
       const message = args[0]?.message || args[0] || ""
       const errorString = String(message)
@@ -18,12 +20,29 @@ export function MetaMaskErrorHandler() {
       if (
         errorString.includes("isDefaultWallet") ||
         errorString.includes("getEnabledChains") ||
-        errorString.includes("does not exist / is not available")
+        errorString.includes("does not exist / is not available") ||
+        errorString.includes("ethereum.send")
       ) {
         return // Suppress these errors
       }
       
       originalConsoleError.apply(console, args)
+    }
+
+    console.warn = (...args: any[]) => {
+      const message = args[0]?.message || args[0] || ""
+      const errorString = String(message)
+      
+      // Suppress MetaMask deprecation warnings
+      if (
+        errorString.includes("ethereum.send") ||
+        errorString.includes("isDefaultWallet") ||
+        errorString.includes("getEnabledChains")
+      ) {
+        return // Suppress these warnings
+      }
+      
+      originalConsoleWarn.apply(console, args)
     }
 
     // Handle unhandled promise rejections from MetaMask
@@ -42,6 +61,7 @@ export function MetaMaskErrorHandler() {
 
     return () => {
       console.error = originalConsoleError
+      console.warn = originalConsoleWarn
       window.removeEventListener("unhandledrejection", handleUnhandledRejection)
     }
   }, [])

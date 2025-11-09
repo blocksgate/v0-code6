@@ -8,12 +8,24 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables')
 }
 
+// Singleton pattern to prevent multiple client instances
+let supabaseClient: ReturnType<typeof createSupabaseClient<Database>> | null = null
+
 export function createClient() {
-  return createSupabaseClient<Database>(supabaseUrl, supabaseAnonKey, {
+  if (supabaseClient) {
+    return supabaseClient
+  }
+
+  supabaseClient = createSupabaseClient<Database>(supabaseUrl, supabaseAnonKey, {
     auth: {
-      persistSession: false,
+      persistSession: true,
+      storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
     },
-  });
+  })
+
+  return supabaseClient
 }
 
-export const supabase = createClient();
+export const supabase = createClient()
