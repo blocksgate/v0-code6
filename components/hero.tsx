@@ -117,17 +117,25 @@ export function Hero() {
 
       {/* Floating neon particles */}
       <div className="absolute inset-0 z-0 overflow-hidden">
-        {[...Array(8)].map((_, i) => (
-          <div
-            key={i}
-            className="absolute w-1 h-1 bg-cyan-400 rounded-full opacity-70 float-particle"
-            style={{
-              left: `${Math.random() * 100}%`,
-              top: `${Math.random() * 100}%`,
-              animationDelay: `${i * 0.75}s`,
-            }}
-          ></div>
-        ))}
+        {[...Array(8)].map((_, i) => {
+          // Use a deterministic seed based on index to avoid hydration mismatch
+          // This ensures server and client render the same positions
+          const seed = i * 0.618033988749895 // Golden ratio for better distribution
+          const left = ((seed * 100) % 100).toFixed(2)
+          const top = (((seed * 1.618033988749895) * 100) % 100).toFixed(2)
+          
+          return (
+            <div
+              key={i}
+              className="absolute w-1 h-1 bg-cyan-400 rounded-full opacity-70 float-particle"
+              style={{
+                left: `${left}%`,
+                top: `${top}%`,
+                animationDelay: `${i * 0.75}s`,
+              }}
+            ></div>
+          )
+        })}
       </div>
 
       <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">

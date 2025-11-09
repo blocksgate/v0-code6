@@ -5,6 +5,7 @@ import { Analytics } from "@vercel/analytics/next"
 import "./globals.css"
 import { WalletProvider } from "@/lib/wallet-context"
 import { ThemeProvider } from "@/components/theme-provider"
+import { MetaMaskErrorHandler } from "@/components/metamask-error-handler"
 
 // Initialize fonts
 import { Geist, Geist_Mono } from "next/font/google"
@@ -30,8 +31,9 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={`${_geistMono.className} font-mono antialiased`}>
+        <MetaMaskErrorHandler />
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
           <WalletProvider>{children}</WalletProvider>
         </ThemeProvider>

@@ -72,6 +72,7 @@ export default function SignUpPage() {
                     <Input
                       id="email"
                       type="email"
+                      autoComplete="email"
                       placeholder="you@example.com"
                       required
                       value={email}
@@ -84,6 +85,7 @@ export default function SignUpPage() {
                     <Input
                       id="password"
                       type="password"
+                      autoComplete="new-password"
                       placeholder="At least 6 characters"
                       required
                       value={password}
@@ -96,6 +98,7 @@ export default function SignUpPage() {
                     <Input
                       id="repeat-password"
                       type="password"
+                      autoComplete="new-password"
                       required
                       value={repeatPassword}
                       onChange={(e) => setRepeatPassword(e.target.value)}
