@@ -112,7 +112,7 @@ export class PortfolioManager extends EventEmitter {
     }
 
     const { error } = await supabase
-      .from<DbPortfolio>("portfolios")
+      .from("portfolios")
       .upsert(portfolioPosition)
 
     if (error) {
@@ -129,7 +129,7 @@ export class PortfolioManager extends EventEmitter {
     }
 
     const { error } = await supabase
-      .from<DbPortfolioSummary>("portfolio_summaries")
+      .from("portfolio_summaries")
       .upsert(portfolioSummary)
 
     if (error) {
@@ -147,7 +147,7 @@ export class PortfolioManager extends EventEmitter {
   async refreshPortfolio(userId: string) {
     try {
       const { data: positions, error: positionsError } = await supabase
-        .from<DbPortfolio>("portfolios")
+        .from("portfolios")
         .select("*")
         .eq("user_id", userId)
 

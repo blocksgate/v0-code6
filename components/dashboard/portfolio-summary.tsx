@@ -25,7 +25,7 @@ export function PortfolioSummary() {
 
   async function loadMetrics() {
     try {
-      const data = await getPortfolioAnalytics()
+      const data = await getPortfolioAnalytics() as PortfolioMetrics
       setMetrics(data)
     } catch (error) {
       console.error("Failed to load portfolio metrics:", error)

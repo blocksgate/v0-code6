@@ -151,13 +151,13 @@ export default function ArbitragePage() {
                 </div>
 
                 <div className="flex items-center justify-between bg-card/50 border border-border rounded-lg p-3">
-                  <label className="text-sm font-medium">Auto-Execute Profitable Trades</label>
-                  <input type="checkbox" className="w-4 h-4 rounded" defaultChecked />
+                  <label htmlFor="auto-execute-checkbox" className="text-sm font-medium">Auto-Execute Profitable Trades</label>
+                  <input id="auto-execute-checkbox" type="checkbox" className="w-4 h-4 rounded" defaultChecked aria-label="Auto-execute profitable trades" />
                 </div>
 
                 <div className="flex items-center justify-between bg-card/50 border border-border rounded-lg p-3">
-                  <label className="text-sm font-medium">Include Cross-Chain Arbs</label>
-                  <input type="checkbox" className="w-4 h-4 rounded" defaultChecked />
+                  <label htmlFor="cross-chain-checkbox" className="text-sm font-medium">Include Cross-Chain Arbs</label>
+                  <input id="cross-chain-checkbox" type="checkbox" className="w-4 h-4 rounded" defaultChecked aria-label="Include cross-chain arbitrage opportunities" />
                 </div>
 
                 <Button className="w-full bg-gradient-to-r from-primary to-accent hover:from-primary/90 hover:to-accent/90">

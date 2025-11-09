@@ -84,11 +84,13 @@ export function LimitOrder({ userAddress, chainId }: LimitOrderProps) {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Expiry</label>
+              <label htmlFor="expiry-select" className="text-sm font-medium">Expiry</label>
               <select
+                id="expiry-select"
                 value={expiry}
                 onChange={(e) => setExpiry(e.target.value)}
                 className="w-full bg-input border border-border rounded-md px-3 py-2 text-sm"
+                aria-label="Order expiry time"
               >
                 <option value="1h">1 Hour</option>
                 <option value="1d">1 Day</option>

@@ -220,7 +220,7 @@ export async function getPortfolioPerformance(
     }
 
     dailyData[date].value = runningValue
-    dailyData[date].pnL = runningPnL
+    dailyData[date].pnl = runningPnL
   }
 
   // Convert to array and sort by date
