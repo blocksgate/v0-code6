@@ -1,8 +1,14 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { priceFeed } from "@/lib/price-feed"
+import { rateLimit } from "@/lib/middleware/rateLimiter"
 
 export async function GET(request: NextRequest) {
   try {
+    // Lightweight rate limit for price queries (public)
+    const rl = rateLimit(request, { capacity: 120, refillRatePerSecond: 2 })
+    if (!rl.allowed) {
+      return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429, headers: { "Retry-After": String(rl.retryAfter) } })
+    }
     const { searchParams } = new URL(request.url)
     const tokenId = searchParams.get("token_id")
     const tokens = searchParams.getAll("tokens")
