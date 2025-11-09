@@ -151,7 +151,7 @@ class TradeAnalytics {
   private async getTradeHistory(userId: string, timeframe: "day" | "week" | "month" | "all") {
     const query = supabase
       .from("trades")
-      .select("*")
+      .select<"*", { realized_pnl: string }>()
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
 
@@ -300,6 +300,11 @@ class TradeAnalytics {
       returns.push((prices[i] - prices[i-1]) / prices[i-1])
     }
     return returns
+  }
+  
+  private calculatePriceChange(prices: number[]): number {
+    if (prices.length < 2) return 0
+    return ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100
   }
 
   private async getPriceHistory(

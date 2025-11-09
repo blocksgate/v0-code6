@@ -3,6 +3,8 @@ import { priceFeed } from "./price-feed"
 import { wsPrice } from "./websocket-price-feed"
 import { getCachedPrice, setCachedPrice } from "./price-cache"
 import { ZxClient } from "./0x-client"
+import { priceHistoryProvider } from "./price-history"
+import type { PriceBar } from "./types/price-history"
 
 export interface PriceData {
   token: string
@@ -183,6 +185,23 @@ export class PriceAggregator extends EventEmitter {
       })
     )
     return Object.fromEntries(results)
+  }
+
+  async getPriceHistory(
+    token: string,
+    timeframe: "1m" | "5m" | "15m" | "1h" | "4h" | "1d",
+    options: { startTime?: number; endTime?: number; limit?: number } = {}
+  ): Promise<PriceBar[]> {
+    try {
+      const history = await priceHistoryProvider.getPriceHistory(token, {
+        timeframe,
+        ...options
+      })
+      return history.bars
+    } catch (error) {
+      console.error(`Failed to fetch price history for ${token}:`, error)
+      throw new Error(`Failed to fetch price history: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 }
 

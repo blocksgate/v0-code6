@@ -1,7 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { supabase } from "@/lib/supabase/client"
+import { rpcClient } from "@/lib/supabase/rpc-client"
 import { rateLimit } from "@/lib/middleware/rateLimiter"
-import type { Trade, Database } from "@/lib/types/supabase"
+import { isRpcError } from "@/lib/types/supabase-functions"
+import type { Trade } from "@/lib/types/supabase"
 
 interface TradeMetrics {
   totalTrades: number
@@ -129,17 +131,12 @@ export async function GET(request: NextRequest) {
       : 0
 
     // Get daily PnL data for chart
-    const { data: dailyPnL, error: pnlError } = await supabase
-      .rpc<Database["public"]["Functions"]["get_daily_pnl"]["Returns"]>("get_daily_pnl", {
-        user_id: userId,
-        start_date: startDate.toISOString(),
-        end_date: endDate.toISOString(),
-        token_filter: token
-      })
-
-    if (pnlError) {
-      throw pnlError
-    }
+    const dailyPnL = await rpcClient.getDailyPnL({
+      user_id: userId,
+      start_date: startDate.toISOString(),
+      end_date: endDate.toISOString(),
+      token_filter: token
+    })
 
     return NextResponse.json({
       metrics,
@@ -149,6 +146,18 @@ export async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error("Error calculating performance metrics:", error)
+    
+    if (isRpcError(error)) {
+      return NextResponse.json(
+        { 
+          error: error.message,
+          code: error.code,
+          details: error.details 
+        },
+        { status: 400 }
+      )
+    }
+
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Internal server error" },
       { status: 500 }

@@ -121,6 +121,10 @@ export class WebSocketPriceFeed extends EventEmitter {
     this.subscribedTokens.clear()
   }
 
+  getSubscribedTokens(): string[] {
+    return Array.from(this.subscribedTokens)
+  }
+
   // Fallback to REST API if WebSocket is not available
   async getPrice(token: string): Promise<number> {
     const cachedPrice = getCachedPrice(token)
