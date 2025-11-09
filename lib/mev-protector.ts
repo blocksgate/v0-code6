@@ -293,15 +293,13 @@ class MEVProtector extends EventEmitter {
     if (!maxFeePerGas) throw new Error("Unable to estimate gas price")
 
     // Increase gas price slightly to avoid being frontrun
-    const protectedTx = {
+    return {
       ...tx,
       maxFeePerGas: (maxFeePerGas * ethers.getBigInt(12) / ethers.getBigInt(10)), // +20%
       maxPriorityFeePerGas: maxPriorityFeePerGas ? 
         (maxPriorityFeePerGas * ethers.getBigInt(12) / ethers.getBigInt(10)) : 
         undefined
-    }
-
-    return protectedTx
+    } as ethers.Transaction
   }
 
   getMonitor(txHash: string): TransactionMonitor | undefined {

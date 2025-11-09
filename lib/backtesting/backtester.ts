@@ -1,6 +1,7 @@
 import { priceAggregator } from "../price-aggregator"
 import { TradingStrategy, Indicator, Rule, RiskParams } from "./types"
 import { EventEmitter } from "events"
+import type { PriceBar } from "../types/ethereum"
 
 export interface BacktestConfig {
   startDate: Date
@@ -150,16 +151,15 @@ export class Backtester extends EventEmitter {
   private async loadHistoricalData(token: string, startDate: Date, endDate: Date) {
     try {
       // Load price history from your database or API
-      const priceHistory = await priceAggregator.getPriceHistory(token, {
-        startDate,
-        endDate,
-        interval: "1h" // 1-hour candles
-      })
+      const priceHistory = await priceAggregator.getPriceHistory(
+        token,
+        "1h" // 1-hour timeframe
+      )
 
-      this.historicalData = priceHistory.map(bar => ({
+      this.historicalData = priceHistory.map((bar: PriceBar) => ({
         timestamp: new Date(bar.timestamp),
-        price: bar.price,
-        volume: bar.volume || 0
+        price: bar.close, // Using close price from PriceBar
+        volume: bar.volume
       }))
     } catch (error) {
       throw new Error(`Failed to load historical data: ${error}`)

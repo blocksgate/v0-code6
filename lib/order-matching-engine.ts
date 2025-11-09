@@ -2,6 +2,7 @@ import { EventEmitter } from "events"
 import { priceAggregator } from "./price-aggregator"
 import { ZxClient } from "./0x-client"
 import { getGasPrice } from "./gas-optimizer"
+import { config } from "./config"
 
 export interface Order {
   id: string
@@ -25,6 +26,7 @@ export class OrderMatchingEngine extends EventEmitter {
   private readonly updateInterval = 15000 // 15 seconds
   private readonly maxSlippage = 0.01 // 1% default slippage
   private readonly minOrderSize = "0.01" // Minimum order size in base token
+  private readonly chainId = config.chainId
 
   constructor() {
     super()
@@ -95,8 +97,18 @@ export class OrderMatchingEngine extends EventEmitter {
       const gasPrice = await getGasPrice()
       order.gasPriceGwei = gasPrice.toString()
 
-      // Execute trade
-      const quote = await this.zeroEx.getQuote(order.token, order.amount, order.side)
+      // Convert order parameters for 0x protocol
+      const [sellToken, buyToken, sellAmount] = this.getTradeParameters(order)
+
+      // Get quote from 0x API
+      const quote = await this.zeroEx.getQuote(
+        this.chainId,
+        sellToken,
+        buyToken,
+        sellAmount,
+        order.maxSlippage || this.maxSlippage
+      )
+
       if (!quote) {
         throw new Error("Failed to get quote")
       }
@@ -111,12 +123,15 @@ export class OrderMatchingEngine extends EventEmitter {
         return // Skip if price is no longer favorable
       }
 
-      // Execute the trade with optimized parameters
-      await this.zeroEx.executeTrade({
-        ...quote,
-        gasPrice: order.gasPriceGwei,
-        slippagePercentage: order.maxSlippage || this.maxSlippage
-      })
+      // Execute the trade
+      await this.zeroEx.executeTrade(
+        this.chainId,
+        order.userId,
+        sellToken,
+        buyToken,
+        sellAmount,
+        order.maxSlippage || this.maxSlippage
+      )
 
       // Update order status
       order.status = "filled"
@@ -127,6 +142,15 @@ export class OrderMatchingEngine extends EventEmitter {
       console.error(`Failed to execute limit order ${order.id}:`, error)
       this.emit("order_error", { order, error })
     }
+  }
+
+  private getTradeParameters(order: Order): [string, string, string] {
+    // Implement the logic to convert order parameters to 0x protocol format
+    // This is a placeholder - you'll need to implement the actual conversion
+    const baseToken = "ETH" // Example - replace with actual base token
+    return order.side === "buy"
+      ? [baseToken, order.token, order.amount]
+      : [order.token, baseToken, order.amount]
   }
 
   async placeOrder(orderData: Omit<Order, "id" | "status" | "createdAt">): Promise<Order> {
@@ -163,16 +187,28 @@ export class OrderMatchingEngine extends EventEmitter {
       const gasPrice = await getGasPrice()
       order.gasPriceGwei = gasPrice.toString()
 
-      const quote = await this.zeroEx.getQuote(order.token, order.amount, order.side)
+      const [sellToken, buyToken, sellAmount] = this.getTradeParameters(order)
+
+      const quote = await this.zeroEx.getQuote(
+        this.chainId,
+        sellToken,
+        buyToken,
+        sellAmount,
+        order.maxSlippage || this.maxSlippage
+      )
+
       if (!quote) {
         throw new Error("Failed to get quote")
       }
 
-      await this.zeroEx.executeTrade({
-        ...quote,
-        gasPrice: order.gasPriceGwei,
-        slippagePercentage: order.maxSlippage || this.maxSlippage
-      })
+      await this.zeroEx.executeTrade(
+        this.chainId,
+        order.userId,
+        sellToken,
+        buyToken,
+        sellAmount,
+        order.maxSlippage || this.maxSlippage
+      )
 
       order.status = "filled"
       order.fillPrice = quote.price

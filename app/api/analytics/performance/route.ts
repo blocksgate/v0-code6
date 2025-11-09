@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { supabase } from "@/lib/supabase/client"
 import { rateLimit } from "@/lib/middleware/rateLimiter"
+import type { Trade, Database } from "@/lib/types/supabase"
 
 interface TradeMetrics {
   totalTrades: number
@@ -69,10 +70,14 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch trades
-    const { data: trades, error } = await query
+    const { data: trades, error } = await query as unknown as { data: Trade[]; error: Error | null }
 
     if (error) {
       throw error
+    }
+
+    if (!trades) {
+      throw new Error("Failed to fetch trades")
     }
 
     // Calculate metrics
@@ -126,10 +131,10 @@ export async function GET(request: NextRequest) {
     // Get daily PnL data for chart
     const { data: dailyPnL, error: pnlError } = await supabase
       .rpc("get_daily_pnl", {
-        user_id: userId,
-        start_date: startDate.toISOString(),
-        end_date: endDate.toISOString(),
-        token_filter: token,
+          user_id: userId,
+          start_date: startDate.toISOString(),
+          end_date: endDate.toISOString(),
+          token_filter: token
       })
 
     if (pnlError) {

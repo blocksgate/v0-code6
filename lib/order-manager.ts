@@ -1,44 +1,21 @@
-import { ArbitrageMonitor, FlashSwapEngine, TradingBot } from "./trading-engine"
-import { ZeroExClient } from "./0x-client"
+import { ZxClient } from "./0x-client"
 import { wsPrice } from "./websocket-price-feed"
 import { supabase } from "./supabase/client"
+import type { Tables } from "./types/supabase"
 
-export interface Order {
-  id: string
-  userId: string
-  type: "limit" | "market"
-  side: "buy" | "sell"
-  token: string
-  amount: string
-  price?: string
-  status: "pending" | "filled" | "cancelled" | "expired"
-  createdAt: number
-  expiresAt?: number
-  filledAt?: number
-  txHash?: string
-}
-
-export interface Trade {
-  id: string
-  orderId: string
-  userId: string
-  type: "market" | "limit"
-  side: "buy" | "sell"
-  token: string
-  amount: string
-  price: string
-  fee: string
-  txHash: string
-  status: "pending" | "confirmed" | "failed"
-  executedAt: number
-}
+type Order = Tables["orders"]["Row"]
+type Trade = Tables["trades"]["Row"]
+type OrderInsert = Tables["orders"]["Insert"]
+type TradeInsert = Tables["trades"]["Insert"]
+type OrderUpdate = Tables["orders"]["Update"]
+type TradeUpdate = Tables["trades"]["Update"]
 
 export class OrderManager {
   private orders: Map<string, Order> = new Map()
-  private readonly zeroEx: ZeroExClient
+  private readonly zeroEx: ZxClient
 
   constructor() {
-    this.zeroEx = new ZeroExClient()
+    this.zeroEx = new ZxClient()
     this.startPriceSubscription()
   }
 
@@ -54,7 +31,7 @@ export class OrderManager {
     )
 
     for (const order of pendingOrders) {
-      const orderPrice = parseFloat(order.price!)
+      const orderPrice = parseFloat(order.price)
       const shouldExecute = (
         (order.side === "buy" && currentPrice <= orderPrice) ||
         (order.side === "sell" && currentPrice >= orderPrice)
@@ -66,119 +43,144 @@ export class OrderManager {
     }
   }
 
-  async createOrder(orderData: Omit<Order, "id" | "status" | "createdAt">): Promise<Order> {
-    const order: Order = {
+  async createOrder(orderData: Omit<OrderInsert, "status" | "created_at" | "updated_at">): Promise<Order> {
+    const order: OrderInsert = {
       ...orderData,
-      id: `order-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       status: "pending",
-      createdAt: Date.now(),
     }
-
-    // Store order in memory
-    this.orders.set(order.id, order)
 
     // Store in database
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("orders")
-      .insert([order])
+      .insert(order)
+      .select()
+      .single()
 
-    if (error) {
-      this.orders.delete(order.id)
-      throw new Error(`Failed to create order: ${error.message}`)
-    }
+    if (error) throw error
+    if (!data) throw new Error("Failed to create order")
+
+    // Store order in memory
+    this.orders.set(data.id, data)
 
     // Execute immediately if market order
-    if (order.type === "market") {
-      const currentPrice = await wsPrice.getPrice(order.token)
-      await this.executeOrder(order, currentPrice)
+    if (data.type === "market") {
+      const currentPrice = await wsPrice.getPrice(data.token)
+      await this.executeOrder(data, currentPrice)
     }
 
-    return order
+    return data
   }
 
-  private async executeOrder(order: Order, executionPrice: number): Promise<void> {
+  private async executeOrder(order: Order, executionPrice: number) {
     try {
+      const chainId = 1 // Replace with actual chain ID from config
+      
       // Get quote from 0x API
-      const quote = await this.zeroEx.getQuote({
-        token: order.token,
-        amount: order.amount,
-        side: order.side,
-      })
+      const quote = await this.zeroEx.getQuote(
+        chainId,
+        order.token, // sellToken
+        "WETH", // buyToken, replace with actual token
+        order.amount
+      )
 
       // Execute trade using 0x Protocol
-      const txHash = await this.zeroEx.executeTrade({
-        quote,
-        order,
-      })
+      const tx = await this.zeroEx.executeTrade(
+        chainId,
+        order.user_id,
+        order.token,
+        "WETH", // replace with actual token
+        order.amount
+      )
 
       // Create trade record
-      const trade: Trade = {
-        id: `trade-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        orderId: order.id,
-        userId: order.userId,
-        type: order.type,
-        side: order.side,
+      const tradeInsert: TradeInsert = {
+        user_id: order.user_id,
         token: order.token,
         amount: order.amount,
         price: executionPrice.toString(),
-        fee: quote.fee,
-        txHash,
+        fee: quote.fees,
+        side: order.side,
         status: "pending",
-        executedAt: Date.now(),
+        tx_hash: tx.hash,
+        executed_at: new Date().toISOString()
       }
 
-      // Update order status
-      order.status = "filled"
-      order.filledAt = Date.now()
-      order.txHash = txHash
-
-      // Update database
-      await Promise.all([
+      // Update order and database
+      const updates = await Promise.all([
         supabase
           .from("orders")
           .update({
-            status: order.status,
-            filledAt: order.filledAt,
-            txHash: order.txHash,
+            status: "filled" as const,
+            filled_amount: order.amount,
+            remaining_amount: "0",
+            tx_hash: tx.hash,
+            updated_at: new Date().toISOString()
           })
-          .eq("id", order.id),
+          .eq("id", order.id)
+          .select()
+          .single(),
         
         supabase
           .from("trades")
-          .insert([trade]),
+          .insert(tradeInsert)
+          .select()
+          .single()
       ])
 
+      const [orderUpdate, tradeInsertResult] = updates
+      
+      if (orderUpdate.error) throw orderUpdate.error
+      if (tradeInsertResult.error) throw tradeInsertResult.error
+
+      // Update memory cache
+      if (orderUpdate.data) {
+        this.orders.set(orderUpdate.data.id, orderUpdate.data)
+      }
+
       // Monitor transaction confirmation
-      this.monitorTradeConfirmation(trade)
+      if (tradeInsertResult.data) {
+        this.monitorTradeConfirmation(tradeInsertResult.data)
+      }
     } catch (error) {
       console.error(`Failed to execute order ${order.id}:`, error)
       
       // Update order status in database
-      await supabase
+      const { error: updateError } = await supabase
         .from("orders")
-        .update({ status: "failed" })
+        .update({ 
+          status: "failed" as const,
+          updated_at: new Date().toISOString()
+        })
         .eq("id", order.id)
+
+      if (updateError) throw updateError
     }
   }
 
   private async monitorTradeConfirmation(trade: Trade) {
     try {
-      const receipt = await this.zeroEx.waitForTransactionReceipt(trade.txHash)
+      // Use provider to wait for receipt instead of ZxClient
+      const provider = await this.zeroEx.getProvider()
+      const receipt = await provider.getTransactionReceipt(trade.tx_hash)
       
-      const status = receipt.status ? "confirmed" : "failed"
+      const status = receipt && receipt.status ? "completed" as const : "failed" as const
       
-      await supabase
+      const { error } = await supabase
         .from("trades")
         .update({ status })
         .eq("id", trade.id)
 
+      if (error) throw error
+
     } catch (error) {
       console.error(`Failed to confirm trade ${trade.id}:`, error)
       
-      await supabase
+      const { error: updateError } = await supabase
         .from("trades")
-        .update({ status: "failed" })
+        .update({ status: "failed" as const })
         .eq("id", trade.id)
+
+      if (updateError) throw updateError
     }
   }
 
@@ -189,7 +191,7 @@ export class OrderManager {
       throw new Error("Order not found")
     }
 
-    if (order.userId !== userId) {
+    if (order.user_id !== userId) {
       throw new Error("Unauthorized")
     }
 
@@ -197,12 +199,15 @@ export class OrderManager {
       throw new Error(`Cannot cancel order in ${order.status} status`)
     }
 
-    order.status = "cancelled"
-    
-    await supabase
+    const { error } = await supabase
       .from("orders")
-      .update({ status: "cancelled" })
+      .update({ 
+        status: "cancelled" as const,
+        updated_at: new Date().toISOString()
+      })
       .eq("id", orderId)
+
+    if (error) throw error
 
     this.orders.delete(orderId)
   }
@@ -214,15 +219,15 @@ export class OrderManager {
   async getUserOrders(userId: string): Promise<Order[]> {
     const { data, error } = await supabase
       .from("orders")
-      .select("*")
-      .eq("userId", userId)
-      .order("createdAt", { ascending: false })
+      .select()
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
 
     if (error) {
       throw new Error(`Failed to fetch user orders: ${error.message}`)
     }
 
-    return data
+    return data || []
   }
 }
 

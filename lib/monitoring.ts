@@ -1,23 +1,8 @@
-import { supabase } from "../supabase/client"
+import { supabase } from "./supabase/client"
 import { EventEmitter } from "events"
 import { captureException, captureMessage } from "@sentry/node"
-
-export interface SystemMetrics {
-  cpu_usage: number
-  memory_usage: number
-  active_users: number
-  requests_per_minute: number
-  average_response_time: number
-  error_rate: number
-}
-
-export interface Alert {
-  id: string
-  type: "error" | "warning" | "info"
-  message: string
-  details: Record<string, any>
-  timestamp: number
-}
+import { SystemMetrics, Alert } from "./types/monitoring"
+import { Database } from "./types/supabase"
 
 class MonitoringSystem extends EventEmitter {
   private metrics: SystemMetrics = {
@@ -133,10 +118,10 @@ class MonitoringSystem extends EventEmitter {
   private async getActiveUsers(): Promise<number> {
     const { count } = await supabase
       .from("active_sessions")
-      .select("*", { count: true })
+      .select("*", { head: true })
       .gt("last_seen", new Date(Date.now() - 300000).toISOString()) // Active in last 5 minutes
 
-    return count || 0
+    return count ?? 0
   }
 
   private async getRequestRate(): Promise<number> {
@@ -154,28 +139,32 @@ class MonitoringSystem extends EventEmitter {
     
     const { count: errorCount } = await supabase
       .from("audit_logs")
-      .select("*", { count: true })
+      .select("*", { head: true })
       .eq("action", "error")
       .gt("created_at", timeWindow)
 
     const { count: totalCount } = await supabase
       .from("audit_logs")
-      .select("*", { count: true })
+      .select("*", { head: true })
       .gt("created_at", timeWindow)
 
-    return totalCount > 0 ? (errorCount || 0) / totalCount * 100 : 0
+    const numErrors = errorCount ?? 0
+    const total = totalCount ?? 0
+    return total > 0 ? (numErrors / total) * 100 : 0
   }
 
   private async storeMetrics(metrics: SystemMetrics) {
-    await supabase
+    const { error } = await supabase
       .from("system_metrics")
-      .insert([{
+      .insert({
         ...metrics,
         timestamp: new Date().toISOString(),
-      }])
+      })
+
+    if (error) throw error
   }
 
-  private createAlert(type: Alert["type"], message: string, details: Record<string, any>) {
+  private async createAlert(type: Alert["type"], message: string, details: Record<string, any>) {
     const alert: Alert = {
       id: `alert-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       type,
@@ -187,19 +176,22 @@ class MonitoringSystem extends EventEmitter {
     this.alerts.push(alert)
     this.emit("alert", alert)
 
-    // Store alert in database
-    supabase
-      .from("system_alerts")
-      .insert([alert])
-      .then(() => {
-        if (type === "error") {
-          captureMessage(message, {
-            level: "error",
-            extra: details,
-          })
-        }
-      })
-      .catch(error => this.logError("Failed to store alert", error))
+    try {
+      const { error } = await supabase
+        .from("system_alerts")
+        .insert(alert)
+
+      if (error) throw error
+
+      if (type === "error") {
+        captureMessage(message, {
+          level: "error",
+          extra: details,
+        })
+      }
+    } catch (error) {
+      this.logError("Failed to store alert", error)
+    }
 
     // Keep last 100 alerts
     if (this.alerts.length > 100) {
@@ -207,24 +199,28 @@ class MonitoringSystem extends EventEmitter {
     }
   }
 
-  logError(message: string, error: any) {
+  async logError(message: string, error: unknown) {
     console.error(message, error)
     captureException(error, {
       extra: { message },
     })
 
-    // Store error in audit logs
-    supabase
-      .from("audit_logs")
-      .insert([{
-        action: "error",
-        details: {
-          message,
-          error: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : undefined,
-        },
-      }])
-      .catch(console.error)
+    try {
+      const { error: dbError } = await supabase
+        .from("audit_logs")
+        .insert({
+          action: "error",
+          details: {
+            message,
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+          },
+        })
+
+      if (dbError) throw dbError
+    } catch (err) {
+      console.error("Failed to store error in audit logs:", err)
+    }
   }
 
   async getMetrics(timeRange: "1h" | "24h" | "7d" = "1h"): Promise<SystemMetrics[]> {
@@ -241,13 +237,14 @@ class MonitoringSystem extends EventEmitter {
         break
     }
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("system_metrics")
       .select("*")
       .gt("timestamp", startTime.toISOString())
       .order("timestamp", { ascending: true })
 
-    return data || []
+    if (error) throw error
+    return data ?? []
   }
 
   async getAlerts(timeRange: "1h" | "24h" | "7d" = "24h"): Promise<Alert[]> {
@@ -264,13 +261,14 @@ class MonitoringSystem extends EventEmitter {
         break
     }
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("system_alerts")
       .select("*")
       .gt("timestamp", startTime.getTime())
       .order("timestamp", { ascending: false })
 
-    return data || []
+    if (error) throw error
+    return data ?? []
   }
 
   getCurrentMetrics(): SystemMetrics {

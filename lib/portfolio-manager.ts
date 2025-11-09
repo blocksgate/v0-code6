@@ -1,6 +1,10 @@
 import { supabase } from "./supabase/client"
 import { wsPrice } from "./websocket-price-feed"
 import { EventEmitter } from "events"
+import { Database } from "./types/supabase"
+
+type DbPortfolio = Database['public']['Tables']['portfolios']['Row']
+type DbPortfolioSummary = Database['public']['Tables']['portfolio_summaries']['Row']
 
 export interface Position {
   token: string
@@ -44,12 +48,12 @@ export class PortfolioManager extends EventEmitter {
     for (const [userId, portfolio] of this.portfolios.entries()) {
       const position = portfolio.positions.get(token)
       if (position) {
-        await this.updatePosition(userId, token, price)
+        await this.updatePositionPrice(userId, token, price)
       }
     }
   }
 
-  private async updatePosition(userId: string, token: string, currentPrice: number) {
+  private async updatePositionPrice(userId: string, token: string, currentPrice: number) {
     const portfolio = this.portfolios.get(userId)
     if (!portfolio) return
 
@@ -96,18 +100,20 @@ export class PortfolioManager extends EventEmitter {
   }
 
   private async persistPortfolioUpdate(userId: string, token: string, position: Position) {
+    const portfolioPosition: DbPortfolio = {
+      user_id: userId,
+      token,
+      amount: position.amount,
+      average_entry_price: position.averageEntryPrice,
+      current_price: position.currentPrice,
+      unrealized_pnl: position.unrealizedPnL,
+      realized_pnl: position.realizedPnL,
+      last_updated: new Date(position.lastUpdated).toISOString()
+    }
+
     const { error } = await supabase
-      .from("portfolio_positions")
-      .upsert({
-        user_id: userId,
-        token,
-        amount: position.amount,
-        average_entry_price: position.averageEntryPrice,
-        current_price: position.currentPrice,
-        unrealized_pnl: position.unrealizedPnL,
-        realized_pnl: position.realizedPnL,
-        last_updated: new Date(position.lastUpdated).toISOString(),
-      })
+      .from("portfolios")
+      .upsert(portfolioPosition)
 
     if (error) {
       console.error("Failed to persist position update:", error)
@@ -115,14 +121,16 @@ export class PortfolioManager extends EventEmitter {
   }
 
   private async persistPortfolioTotals(userId: string, portfolio: Portfolio) {
+    const portfolioSummary: DbPortfolioSummary = {
+      user_id: userId,
+      total_value: portfolio.totalValue,
+      total_pnl: portfolio.totalPnL,
+      last_updated: new Date(portfolio.lastUpdated).toISOString()
+    }
+
     const { error } = await supabase
-      .from("portfolios")
-      .upsert({
-        user_id: userId,
-        total_value: portfolio.totalValue,
-        total_pnl: portfolio.totalPnL,
-        last_updated: new Date(portfolio.lastUpdated).toISOString(),
-      })
+      .from("portfolio_summaries")
+      .upsert(portfolioSummary)
 
     if (error) {
       console.error("Failed to persist portfolio totals:", error)
@@ -138,33 +146,33 @@ export class PortfolioManager extends EventEmitter {
 
   async refreshPortfolio(userId: string) {
     try {
-      // Fetch latest position data from database
       const { data: positions, error: positionsError } = await supabase
-        .from("portfolio_positions")
+        .from("portfolios")
         .select("*")
         .eq("user_id", userId)
 
       if (positionsError) throw positionsError
 
-      // Update local cache
       const portfolio: Portfolio = {
         userId,
         positions: new Map(),
         totalValue: "0",
         totalPnL: "0",
-        lastUpdated: Date.now(),
+        lastUpdated: Date.now()
       }
 
-      for (const pos of positions) {
-        portfolio.positions.set(pos.token, {
-          token: pos.token,
-          amount: pos.amount,
-          averageEntryPrice: pos.average_entry_price,
-          currentPrice: pos.current_price,
-          unrealizedPnL: pos.unrealized_pnl,
-          realizedPnL: pos.realized_pnl,
-          lastUpdated: new Date(pos.last_updated).getTime(),
-        })
+      if (positions) {
+        for (const pos of positions) {
+          portfolio.positions.set(pos.token, {
+            token: pos.token,
+            amount: pos.amount,
+            averageEntryPrice: pos.average_entry_price,
+            currentPrice: pos.current_price,
+            unrealizedPnL: pos.unrealized_pnl,
+            realizedPnL: pos.realized_pnl,
+            lastUpdated: new Date(pos.last_updated).getTime()
+          })
+        }
       }
 
       this.portfolios.set(userId, portfolio)
@@ -182,7 +190,7 @@ export class PortfolioManager extends EventEmitter {
     return this.portfolios.get(userId) || null
   }
 
-  async updatePosition(
+  async updateUserPosition(
     userId: string,
     token: string,
     amount: string,
@@ -195,7 +203,7 @@ export class PortfolioManager extends EventEmitter {
         positions: new Map(),
         totalValue: "0",
         totalPnL: "0",
-        lastUpdated: Date.now(),
+        lastUpdated: Date.now()
       }
       this.portfolios.set(userId, portfolio)
     }
@@ -222,7 +230,7 @@ export class PortfolioManager extends EventEmitter {
 
       existingPosition.currentPrice = price
       existingPosition.lastUpdated = Date.now()
-      await this.updatePosition(userId, token, newPrice)
+      await this.updatePositionPrice(userId, token, newPrice)
       return existingPosition
     } else {
       // New position
@@ -233,10 +241,10 @@ export class PortfolioManager extends EventEmitter {
         currentPrice: price,
         unrealizedPnL: "0",
         realizedPnL: "0",
-        lastUpdated: Date.now(),
+        lastUpdated: Date.now()
       }
       portfolio.positions.set(token, position)
-      await this.updatePosition(userId, token, newPrice)
+      await this.updatePositionPrice(userId, token, newPrice)
       return position
     }
   }
