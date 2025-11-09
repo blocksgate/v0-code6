@@ -44,6 +44,7 @@ export class ZxClient {
     buyToken: string,
     sellAmount: string,
     slippagePercentage?: number,
+    method?: "permit2" | "allowance-holder"
   ): Promise<ZxQuote> {
     const params = new URLSearchParams({
       chainId: chainId.toString(),
@@ -53,7 +54,15 @@ export class ZxClient {
       ...(slippagePercentage && { slippagePercentage: slippagePercentage.toString() }),
     })
 
-    const url = `${this.baseUrl}/swap/v1/quote?${params}`
+    // Use different endpoints for different methods
+    let endpoint = "/swap/v1/quote"
+    if (method === "permit2") {
+      endpoint = "/swap/permit2/quote"
+    } else if (method === "allowance-holder") {
+      endpoint = "/swap/allowance-holder/quote"
+    }
+
+    const url = `${this.baseUrl}${endpoint}?${params}`
 
     const response = await fetch(url, {
       headers: {
