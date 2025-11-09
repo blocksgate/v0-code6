@@ -130,11 +130,11 @@ export async function GET(request: NextRequest) {
 
     // Get daily PnL data for chart
     const { data: dailyPnL, error: pnlError } = await supabase
-      .rpc("get_daily_pnl", {
-          user_id: userId,
-          start_date: startDate.toISOString(),
-          end_date: endDate.toISOString(),
-          token_filter: token
+      .rpc<Database["public"]["Functions"]["get_daily_pnl"]["Returns"]>("get_daily_pnl", {
+        user_id: userId,
+        start_date: startDate.toISOString(),
+        end_date: endDate.toISOString(),
+        token_filter: token
       })
 
     if (pnlError) {

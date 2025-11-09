@@ -63,9 +63,73 @@ export interface DailyPnL {
   pnl: string;
 }
 
+export interface SystemMetricRow {
+  id: string;
+  timestamp: string;
+  cpu_usage: number;
+  memory_usage: number;
+  active_users: number;
+  requests_per_minute: number;
+  average_response_time: number;
+  error_rate: number;
+  created_at: string;
+}
+
+export interface SystemAlertRow {
+  id: string;
+  type: "error" | "warning" | "info";
+  message: string;
+  details: Record<string, any>;
+  timestamp: string;
+  created_at: string;
+}
+
+export interface AuditLogRow {
+  id: string;
+  action: string;
+  details: {
+    message: string;
+    error: string;
+    stack?: string;
+  };
+  timestamp: string;
+  created_at: string;
+}
+
 export type Database = {
   public: {
-    Tables: Tables;
+    Tables: {
+      active_sessions: {
+        Row: {
+          id: string;
+          user_id: string;
+          last_seen: string;
+          created_at: string;
+        };
+        Insert: Omit<Database['public']['Tables']['active_sessions']['Row'], 'id' | 'created_at'>;
+        Update: Partial<Database['public']['Tables']['active_sessions']['Row']>;
+      };
+      system_metrics: {
+        Row: SystemMetricRow;
+        Insert: Omit<SystemMetricRow, "id" | "created_at">;
+        Update: Partial<SystemMetricRow>;
+      };
+      system_alerts: {
+        Row: SystemAlertRow;
+        Insert: Omit<SystemAlertRow, "id" | "created_at">;
+        Update: Partial<SystemAlertRow>;
+      };
+      audit_logs: {
+        Row: AuditLogRow;
+        Insert: Omit<AuditLogRow, "id" | "created_at">;
+        Update: Partial<AuditLogRow>;
+      };
+      profiles: Tables["profiles"];
+      orders: Tables["orders"];
+      trades: Tables["trades"];
+      portfolios: Tables["portfolios"];
+      portfolio_summaries: Tables["portfolio_summaries"];
+    };
     Functions: {
       get_daily_pnl: {
         Args: {
@@ -74,10 +138,22 @@ export type Database = {
           end_date: string;
           token_filter: string | null;
         };
-        Returns: {
+        Returns: Array<{
           date: string;
           pnl: string;
-        }[];
+        }>;
+      };
+      get_active_sessions_count: {
+        Args: {
+          window_minutes: number;
+        };
+        Returns: number;
+      };
+      get_request_rate: {
+        Args: {
+          window_minutes: number;
+        };
+        Returns: number;
       };
     };
   };
@@ -108,5 +184,47 @@ export interface Tables {
     Row: PortfolioSummary;
     Insert: PortfolioSummary;
     Update: Partial<PortfolioSummary>;
+  };
+  system_metrics: {
+    Row: {
+      id: string;
+      timestamp: string;
+      cpu_usage: number;
+      memory_usage: number;
+      active_users: number;
+      requests_per_minute: number;
+      average_response_time: number;
+      error_rate: number;
+      created_at: string;
+    };
+    Insert: Omit<Tables["system_metrics"]["Row"], "id" | "created_at">;
+    Update: Partial<Tables["system_metrics"]["Row"]>;
+  };
+  system_alerts: {
+    Row: {
+      id: string;
+      type: "error" | "warning" | "info";
+      message: string;
+      details: Record<string, any>;
+      timestamp: string;
+      created_at: string;
+    };
+    Insert: Omit<Tables["system_alerts"]["Row"], "id" | "created_at">;
+    Update: Partial<Tables["system_alerts"]["Row"]>;
+  };
+  audit_logs: {
+    Row: {
+      id: string;
+      action: string;
+      details: {
+        message: string;
+        error: string;
+        stack?: string;
+      };
+      timestamp: string;
+      created_at: string;
+    };
+    Insert: Omit<Tables["audit_logs"]["Row"], "id" | "created_at">;
+    Update: Partial<Tables["audit_logs"]["Row"]>;
   };
 }

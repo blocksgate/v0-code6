@@ -13,6 +13,7 @@ export const config = {
     apiKey: process.env.ZX_API_KEY || "",
     baseUrl: "https://api.0x.org",
   },
+  chainId: 1, // Default to Ethereum mainnet
 
   // RPC Providers
   rpc: {

@@ -1,4 +1,4 @@
-import { WebSocketServer } from "ws"
+import { WebSocket, WebSocketServer } from "ws"
 import { Server } from "http"
 import { EventEmitter } from "events"
 import { verifyToken } from "./supabase/auth"
@@ -49,9 +49,11 @@ export class RealtimeServer extends EventEmitter {
 
       this.clients.set(clientId, client)
 
-      ws.on("message", (data: string) => this.handleMessage(client, data))
+      ws.addEventListener("message", (event) => {
+        this.handleMessage(client, event.data.toString())
+      })
 
-      ws.on("close", () => {
+      ws.addEventListener("close", () => {
         this.clients.delete(clientId)
       })
 

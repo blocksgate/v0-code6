@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { monitoring, type SystemMetrics, type Alert } from "@/lib/monitoring"
+import { monitoring } from "@/lib/monitoring"
+import type { SystemMetric, SystemAlert } from "@/lib/types/monitoring"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts"
 import { Card } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -9,9 +10,9 @@ import { Alert as AlertComponent } from "@/components/ui/alert"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 export function AdminDashboard() {
-  const [metrics, setMetrics] = useState<SystemMetrics[]>([])
-  const [currentMetrics, setCurrentMetrics] = useState<SystemMetrics>()
-  const [alerts, setAlerts] = useState<Alert[]>([])
+  const [metrics, setMetrics] = useState<SystemMetric[]>([])
+  const [currentMetrics, setCurrentMetrics] = useState<SystemMetric>()
+  const [alerts, setAlerts] = useState<SystemAlert[]>([])
   const [timeRange, setTimeRange] = useState<"1h" | "24h" | "7d">("1h")
   const [loading, setLoading] = useState(true)
 
@@ -152,7 +153,7 @@ export function AdminDashboard() {
           <div className="space-y-4">
             {alerts.map((alert) => (
               <AlertComponent
-                key={alert.id}
+                key={`${alert.timestamp}-${alert.message}`}
                 variant={alert.type === "error" ? "destructive" : "default"}
               >
                 <div className="flex justify-between items-start">

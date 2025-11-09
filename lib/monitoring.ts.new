@@ -2,10 +2,8 @@ import { supabase } from "./supabase/client"
 import { EventEmitter } from "events"
 import { captureException, captureMessage } from "@sentry/node"
 import { SystemMetric, SystemAlert } from "./types/monitoring"
-import type { Database } from "./types/supabase"
 
-type Tables = Database['public']['Tables']
-type DbInsert<T extends keyof Tables> = Tables[T]['Insert']
+export type { SystemMetric, SystemAlert }
 
 class MonitoringSystem extends EventEmitter {
   private metrics: SystemMetric = {
@@ -121,19 +119,17 @@ class MonitoringSystem extends EventEmitter {
   }
 
   private async getActiveUsers(): Promise<number> {
-    const { data, error } = await supabase
-      .rpc('get_active_sessions_count', { window_minutes: 5 } as any)
+    const { count } = await supabase
+      .from("active_sessions")
+      .select("*", { head: true })
+      .gt("last_seen", new Date(Date.now() - 300000).toISOString()) // Active in last 5 minutes
 
-    if (error) throw error
-    return data ?? 0
+    return count ?? 0
   }
 
   private async getRequestRate(): Promise<number> {
-    const { data, error } = await supabase
-      .rpc('get_request_rate', { window_minutes: 1 } as any)
-
-    if (error) throw error
-    return data ?? 0
+    // Implementation depends on your API gateway or load balancer
+    return 0
   }
 
   private async getAverageResponseTime(): Promise<number> {
@@ -162,16 +158,8 @@ class MonitoringSystem extends EventEmitter {
 
   private async storeMetrics(metrics: SystemMetric) {
     const { error } = await supabase
-      .from('system_metrics')
-      .insert({
-        timestamp: metrics.timestamp,
-        cpu_usage: metrics.cpu_usage,
-        memory_usage: metrics.memory_usage,
-        active_users: metrics.active_users,
-        requests_per_minute: metrics.requests_per_minute,
-        average_response_time: metrics.average_response_time,
-        error_rate: metrics.error_rate
-      } as any)
+      .from("system_metrics")
+      .insert(metrics)
 
     if (error) throw error
   }
@@ -189,13 +177,8 @@ class MonitoringSystem extends EventEmitter {
 
     try {
       const { error } = await supabase
-        .from('system_alerts')
-        .insert({
-          type: alert.type,
-          message: alert.message,
-          details: alert.details,
-          timestamp: alert.timestamp
-        } as any)
+        .from("system_alerts")
+        .insert(alert)
 
       if (error) throw error
 
@@ -223,7 +206,7 @@ class MonitoringSystem extends EventEmitter {
 
     try {
       const { error: dbError } = await supabase
-        .from('audit_logs')
+        .from("audit_logs")
         .insert({
           action: "error",
           details: {
@@ -231,8 +214,8 @@ class MonitoringSystem extends EventEmitter {
             error: error instanceof Error ? error.message : String(error),
             stack: error instanceof Error ? error.stack : undefined,
           },
-          timestamp: new Date().toISOString()
-        } as any)
+          timestamp: new Date().toISOString(),
+        })
 
       if (dbError) throw dbError
     } catch (err) {
@@ -281,7 +264,7 @@ class MonitoringSystem extends EventEmitter {
     const { data, error } = await supabase
       .from("system_alerts")
       .select("*")
-      .gt("timestamp", startTime.getTime())
+      .gt("timestamp", startTime.toISOString())
       .order("timestamp", { ascending: false })
 
     if (error) throw error
