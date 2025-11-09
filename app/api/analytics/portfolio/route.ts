@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { authenticateRequest } from "@/lib/supabase/wallet-auth"
-import { createClient } from "@/lib/supabase/server"
+import { calculatePortfolioAnalytics, getPortfolioPerformance } from "@/lib/portfolio-analytics"
 
 export async function GET(request: NextRequest) {
   const auth = await authenticateRequest(request)
@@ -16,50 +16,63 @@ export async function GET(request: NextRequest) {
         portfolio_value: 0,
         total_cost_basis: 0,
         unrealized_pnl: 0,
+        realized_pnl: 0,
+        total_pnl: 0,
+        roi: 0,
         total_trades: 0,
         winning_trades: 0,
+        losing_trades: 0,
         win_rate: 0,
+        average_win: 0,
+        average_loss: 0,
+        profit_factor: 0,
+        sharpe_ratio: 0,
+        max_drawdown: 0,
         holdings_count: 0,
+        asset_allocation: {},
         message: "Wallet-only mode: Connect with email to track portfolio history"
       })
     }
 
-    // Supabase authenticated user - fetch from database
-    const supabase = await createClient()
-    
-    // Get portfolio data
-    const { data: portfolio, error: portfolioError } = await supabase
-      .from("portfolios")
-      .select("*")
-      .eq("user_id", auth.userId)
+    // Get query parameters
+    const { searchParams } = new URL(request.url)
+    const period = searchParams.get("period") as "7d" | "30d" | "90d" | "1y" | "all" | null
+    const startDate = searchParams.get("startDate") ? new Date(searchParams.get("startDate")!) : undefined
+    const endDate = searchParams.get("endDate") ? new Date(searchParams.get("endDate")!) : undefined
 
-    if (portfolioError) throw portfolioError
+    // Calculate comprehensive analytics
+    const analytics = await calculatePortfolioAnalytics(auth.userId, startDate, endDate)
 
-    // Get trades for performance metrics
-    const { data: trades, error: tradesError } = await supabase
-      .from("trades")
-      .select("*")
-      .eq("user_id", auth.userId)
-      .eq("status", "completed")
-
-    if (tradesError) throw tradesError
-
-    // Calculate metrics
-    const totalTrades = trades?.length || 0
-    const winningTrades = trades?.filter((t: { profit_loss: number }) => t.profit_loss && t.profit_loss > 0).length || 0
-    const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0
-    const totalPnL = trades?.reduce((sum: any, t: { profit_loss: any }) => sum + (t.profit_loss || 0), 0) || 0
+    // Get performance data if period specified
+    let performance = null
+    if (period) {
+      performance = await getPortfolioPerformance(auth.userId, period)
+    }
 
     return NextResponse.json({
-      portfolio_value: portfolio?.reduce((sum: any, t: { usd_value: any }) => sum + (t.usd_value || 0), 0) || 0,
-      total_cost_basis: portfolio?.reduce((sum: any, t: { cost_basis: any }) => sum + (t.cost_basis || 0), 0) || 0,
-      unrealized_pnl: totalPnL,
-      total_trades: totalTrades,
-      winning_trades: winningTrades,
-      win_rate: winRate,
-      holdings_count: portfolio?.length || 0,
+      ...analytics,
+      // Map to API response format
+      portfolio_value: analytics.portfolioValue,
+      total_cost_basis: analytics.totalCostBasis,
+      unrealized_pnl: analytics.unrealizedPnL,
+      realized_pnl: analytics.realizedPnL,
+      total_pnl: analytics.totalPnL,
+      roi: analytics.roi,
+      total_trades: analytics.totalTrades,
+      winning_trades: analytics.winningTrades,
+      losing_trades: analytics.losingTrades,
+      win_rate: analytics.winRate,
+      average_win: analytics.averageWin,
+      average_loss: analytics.averageLoss,
+      profit_factor: analytics.profitFactor,
+      sharpe_ratio: analytics.sharpeRatio,
+      max_drawdown: analytics.maxDrawdown,
+      holdings_count: analytics.holdingsCount,
+      asset_allocation: analytics.assetAllocation,
+      performance,
     })
   } catch (error) {
+    console.error("[Portfolio Analytics] Error:", error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to fetch analytics" },
       { status: 500 },
