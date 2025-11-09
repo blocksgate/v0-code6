@@ -259,3 +259,17 @@ export function getGasOptimizer(): GasOptimizer {
   }
   return optimizer
 }
+
+export async function getGasPrice(priority: 'fast' | 'standard' | 'slow' = 'standard'): Promise<string> {
+  const optimizer = getGasOptimizer();
+  const currentOracle = optimizer.getGasHistory(1)[0] || optimizer.recommendOptimalGasPrice({}).suggestedGasPrice;
+  
+  switch(priority) {
+    case 'fast':
+      return currentOracle.fast.toString();
+    case 'slow':
+      return (currentOracle.standard * 0.8).toString();
+    default:
+      return currentOracle.standard.toString();
+  }
+}

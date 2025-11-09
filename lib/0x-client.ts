@@ -90,6 +90,31 @@ export class ZxClient {
     const data = await response.json()
     return data.data || {}
   }
+
+  async executeTrade(
+    chainId: number,
+    userAddress: string,
+    sellToken: string,
+    buyToken: string,
+    sellAmount: string,
+    slippagePercentage?: number
+  ) {
+    const quote = await this.getQuote(
+      chainId,
+      sellToken,
+      buyToken,
+      sellAmount,
+      slippagePercentage
+    );
+
+    return {
+      to: quote.to,
+      data: quote.data,
+      value: quote.value,
+      gas: quote.gas,
+      gasPrice: quote.gasPrice,
+    };
+  }
 }
 
 export const zxClient = new ZxClient()

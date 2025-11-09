@@ -178,6 +178,20 @@ export class RpcProvider {
     return result
   }
 
+  async getGasPrice(): Promise<string> {
+    const result = await this.call("eth_gasPrice")
+    return result
+  }
+
+  getProvider(): any {
+    return {
+      getGasPrice: this.getGasPrice.bind(this),
+      estimateGas: this.estimateGas.bind(this),
+      getBalance: this.getBalance.bind(this),
+      getBlockNumber: this.getBlockNumber.bind(this)
+    }
+  }
+
   getActiveEndpoint(): RpcEndpoint | null {
     for (let i = 0; i < this.endpoints.length; i++) {
       if (!this.failedEndpoints.has(i)) {
@@ -229,3 +243,5 @@ export function getRpcProvider(): RpcProvider {
   }
   return rpcProvider
 }
+
+export const provider = getRpcProvider().getProvider();
