@@ -40,13 +40,18 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get("startDate") ? new Date(searchParams.get("startDate")!) : undefined
     const endDate = searchParams.get("endDate") ? new Date(searchParams.get("endDate")!) : undefined
 
+    const userId = auth.userId || ""
+    if (!userId) {
+      return NextResponse.json({ error: "User ID not found" }, { status: 401 })
+    }
+
     // Calculate comprehensive analytics
-    const analytics = await calculatePortfolioAnalytics(auth.userId, startDate, endDate)
+    const analytics = await calculatePortfolioAnalytics(userId, startDate, endDate)
 
     // Get performance data if period specified
     let performance = null
     if (period) {
-      performance = await getPortfolioPerformance(auth.userId, period)
+      performance = await getPortfolioPerformance(userId, period)
     }
 
     return NextResponse.json({

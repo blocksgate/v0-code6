@@ -18,7 +18,11 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const orders = await riskManager.getStopLossOrders(auth.userId)
+    const userId = auth.userId || ""
+    if (!userId) {
+      return NextResponse.json({ error: "User ID not found" }, { status: 401 })
+    }
+    const orders = await riskManager.getStopLossOrders(userId)
 
     return NextResponse.json({ orders })
   } catch (error) {
@@ -55,8 +59,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const userId = auth.userId || ""
+    if (!userId) {
+      return NextResponse.json({ error: "User ID not found" }, { status: 401 })
+    }
     const order = await riskManager.createStopLossOrder(
-      auth.userId,
+      userId,
       token,
       Number.parseFloat(positionSize),
       Number.parseFloat(entryPrice),
@@ -106,7 +114,11 @@ export async function DELETE(request: NextRequest) {
       )
     }
 
-    const success = await riskManager.cancelStopLossOrder(orderId, auth.userId)
+    const userId = auth.userId || ""
+    if (!userId) {
+      return NextResponse.json({ error: "User ID not found" }, { status: 401 })
+    }
+    const success = await riskManager.cancelStopLossOrder(orderId, userId)
 
     if (!success) {
       return NextResponse.json(

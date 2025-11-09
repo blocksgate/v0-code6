@@ -18,7 +18,11 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const limits = await riskManager.getRiskLimits(auth.userId)
+    const userId = auth.userId || ""
+    if (!userId) {
+      return NextResponse.json({ error: "User ID not found" }, { status: 401 })
+    }
+    const limits = await riskManager.getRiskLimits(userId)
 
     if (!limits) {
       return NextResponse.json(
@@ -53,7 +57,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const limits = await riskManager.updateRiskLimits(auth.userId, body)
+    const userId = auth.userId || ""
+    if (!userId) {
+      return NextResponse.json({ error: "User ID not found" }, { status: 401 })
+    }
+    const limits = await riskManager.updateRiskLimits(userId, body)
 
     if (!limits) {
       return NextResponse.json(
