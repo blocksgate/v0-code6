@@ -9,6 +9,8 @@ import { useTokenBalance, COMMON_TOKENS } from "@/lib/hooks/use-token-balance"
 import { useTokenPrice } from "@/lib/hooks/use-token-price"
 import { Loader2, ArrowDownUp, Settings, Info, CheckCircle2, XCircle } from "lucide-react"
 import { ethers } from "ethers"
+import { toast } from "sonner"
+import { TransactionStatus } from "@/components/transaction-status"
 
 interface SwapQuote {
   buyAmount: string
@@ -168,6 +170,9 @@ export function EnhancedSwapInterface() {
       if (receipt && receipt.status === 1) {
         setTxStatus("success")
         console.log("[Swap] Transaction confirmed:", hash)
+        toast.success("Swap successful!", {
+          description: `Transaction confirmed: ${hash.slice(0, 8)}...${hash.slice(-6)}`,
+        })
         
         // Save to database
         await saveSwapToDatabase(hash)
@@ -183,10 +188,16 @@ export function EnhancedSwapInterface() {
       } else {
         setTxStatus("failed")
         console.error("[Swap] Transaction failed")
+        toast.error("Transaction failed", {
+          description: "Your transaction has failed on-chain",
+        })
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("[Swap] Execution error:", error)
       setTxStatus("failed")
+      toast.error("Swap failed", {
+        description: error?.message || "An error occurred during swap execution",
+      })
     } finally {
       setIsExecuting(false)
     }
@@ -194,9 +205,10 @@ export function EnhancedSwapInterface() {
 
   const saveSwapToDatabase = async (txHash: string) => {
     try {
-      await fetch("/api/swap/execute", {
+      const response = await fetch("/api/swap/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           chainId: 1,
           sellToken: COMMON_TOKENS[sellToken].address,
@@ -207,8 +219,15 @@ export function EnhancedSwapInterface() {
           quote,
         }),
       })
+
+      if (!response.ok) {
+        throw new Error("Failed to save swap to database")
+      }
     } catch (error) {
       console.error("[Swap] Save error:", error)
+      toast.error("Failed to save transaction", {
+        description: "Transaction executed but couldn't be saved to history",
+      })
     }
   }
 
@@ -343,29 +362,18 @@ export function EnhancedSwapInterface() {
 
         {/* Transaction Status */}
         {txHash && (
-          <div className={`p-4 rounded-lg border ${
-            txStatus === "success" ? "bg-green-500/10 border-green-500/20" :
-            txStatus === "failed" ? "bg-red-500/10 border-red-500/20" :
-            "bg-blue-500/10 border-blue-500/20"
-          }`}>
-            <div className="flex items-center gap-2 mb-2">
-              {txStatus === "success" && <CheckCircle2 className="w-5 h-5 text-green-400" />}
-              {txStatus === "failed" && <XCircle className="w-5 h-5 text-red-400" />}
-              {txStatus === "pending" && <Loader2 className="w-5 h-5 animate-spin text-blue-400" />}
-              <span className="text-white font-medium">
-                {txStatus === "success" && "Swap Successful!"}
-                {txStatus === "failed" && "Swap Failed"}
-                {txStatus === "pending" && "Processing..."}
-              </span>
-            </div>
-            <a
-              href={`https://etherscan.io/tx/${txHash}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-blue-400 hover:underline"
-            >
-              View on Etherscan →
-            </a>
+          <div className="mt-4">
+            <TransactionStatus
+              txHash={txHash}
+              chainId={1}
+              onStatusChange={(status) => {
+                if (status === "confirmed") {
+                  setTxStatus("success")
+                } else if (status === "failed") {
+                  setTxStatus("failed")
+                }
+              }}
+            />
           </div>
         )}
 
