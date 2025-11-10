@@ -67,13 +67,18 @@ export async function POST(request: NextRequest) {
       const amountInWei = ethers.parseUnits(String(order.amount_in), 18).toString()
       let quote
       try {
-        quote = await zxClient.getQuote(
-          order.chain_id,
-          order.token_in,
-          order.token_out,
-          amountInWei,
-          0.5,
-        )
+      // Get user address for better quote accuracy
+      const takerAddress = auth.walletAddress || undefined
+      
+      quote = await zxClient.getQuote(
+        order.chain_id,
+        order.token_in,
+        order.token_out,
+        amountInWei,
+        0.5,
+        undefined, // method
+        takerAddress // taker address (optional)
+      )
       } catch (error) {
         console.error("[ExecuteOrder] Failed to get quote:", error)
       }
@@ -124,12 +129,18 @@ export async function POST(request: NextRequest) {
 
     // If no txHash, return execution quote for user to sign
     const amountInWei = ethers.parseUnits(String(order.amount_in), 18).toString()
+    
+    // Get user address for better quote accuracy
+    const takerAddress = auth.walletAddress || undefined
+    
     const quote = await zxClient.getQuote(
       order.chain_id,
       order.token_in,
       order.token_out,
       amountInWei,
       0.5, // 0.5% slippage
+      undefined, // method
+      takerAddress // taker address (optional)
     )
 
     return NextResponse.json({

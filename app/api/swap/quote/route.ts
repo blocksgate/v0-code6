@@ -34,13 +34,19 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // Get user address for better quote accuracy (optional but recommended)
+    // 0x API v2 can provide more accurate quotes when taker address is known
+    const takerAddress = auth.walletAddress || undefined
+    
     // Get quote from 0x Protocol
     const quote = await zxClient.getQuote(
       chainId,
       sellToken,
       buyToken,
       sellAmount,
-      slippagePercentage ? Number.parseFloat(slippagePercentage) : undefined
+      slippagePercentage ? Number.parseFloat(slippagePercentage) : undefined,
+      undefined, // method (defaults to allowance-holder)
+      takerAddress // taker address for better quote accuracy (optional)
     )
 
     return NextResponse.json({

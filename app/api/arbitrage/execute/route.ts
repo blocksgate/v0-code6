@@ -33,7 +33,19 @@ export async function POST(request: NextRequest) {
 
     // Get quote for the arbitrage trade
     const sellAmountWei = ethers.parseUnits(sellAmount, 18).toString()
-    const quote = await zxClient.getQuote(chainId, sellToken, buyToken, sellAmountWei, 0.5)
+    
+    // Get user address for better quote accuracy (optional)
+    const takerAddress = auth.walletAddress || undefined
+    
+    const quote = await zxClient.getQuote(
+      chainId,
+      sellToken,
+      buyToken,
+      sellAmountWei,
+      0.5,
+      undefined, // method
+      takerAddress // taker address for better quote accuracy
+    )
 
     if (!quote) {
       return NextResponse.json({ error: "Failed to get execution quote" }, { status: 400 })
