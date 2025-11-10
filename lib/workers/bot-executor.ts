@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/server"
 import { sleep } from "@/lib/utils"
 import { zxClient } from "@/lib/0x-client"
 import { priceFeed } from "@/lib/price-feed"
+import { logger } from "@/lib/monitoring/logger"
 import { ethers } from "ethers"
 
 interface BotStrategy {
@@ -90,9 +91,10 @@ async function executeDCAStrategy(strategy: BotStrategy, supabase: ReturnType<ty
       })
       .eq("id", strategy.id)
 
-    console.log(`[BotExecutor] DCA strategy ${strategy.id} executed: ${amountIn} ${tokenIn}`)
+    logger.botStrategy(strategy.id, "dca_execute", "success")
+    logger.info(`[BotExecutor] DCA strategy ${strategy.id} executed: ${amountIn} ${tokenIn}`)
   } catch (error) {
-    console.error(`[BotExecutor] Error executing DCA strategy ${strategy.id}:`, error)
+    logger.error(`[BotExecutor] Error executing DCA strategy ${strategy.id}`, { strategyId: strategy.id, strategyType: "dca" }, error instanceof Error ? error : new Error(String(error)))
   }
 }
 
@@ -117,7 +119,8 @@ async function executeGridStrategy(strategy: BotStrategy, supabase: ReturnType<t
 
   // This is a simplified version - in production, you'd manage multiple limit orders
   // For now, we'll just log the grid setup
-  console.log(`[BotExecutor] Grid strategy ${strategy.id}: ${numGrids} grids at ${gridSpacing * 100}% spacing`)
+  logger.botStrategy(strategy.id, "grid_setup", "configured")
+  logger.info(`[BotExecutor] Grid strategy ${strategy.id}: ${numGrids} grids at ${gridSpacing * 100}% spacing`)
 
   // Update last executed
   await supabase
@@ -246,7 +249,7 @@ async function processStrategy(strategy: BotStrategy, supabase: ReturnType<typeo
 async function executeBotStrategies() {
   const supabase = await createClient()
 
-  console.log("[BotExecutor] Starting bot executor worker...")
+  logger.info("[BotExecutor] Starting bot executor worker...")
 
   while (true) {
     try {
@@ -258,13 +261,13 @@ async function executeBotStrategies() {
         .limit(50)
 
       if (error) {
-        console.error("[BotExecutor] Error fetching strategies:", error.message || error)
+        logger.error("[BotExecutor] Error fetching strategies", { error: error.message || String(error) }, error instanceof Error ? error : new Error(String(error)))
         await sleep(10000)
         continue
       }
 
       if (strategies && strategies.length > 0) {
-        console.log(`[BotExecutor] Found ${strategies.length} active strategies`)
+        logger.info(`[BotExecutor] Found ${strategies.length} active strategies`, { count: strategies.length })
 
         // Process strategies in parallel (with concurrency limit)
         const concurrency = 5
@@ -273,10 +276,10 @@ async function executeBotStrategies() {
           await Promise.all(batch.map((strategy) => processStrategy(strategy as BotStrategy, supabase)))
         }
       } else {
-        console.log("[BotExecutor] No active strategies found")
+        logger.debug("[BotExecutor] No active strategies found")
       }
     } catch (err) {
-      console.error("[BotExecutor] Unexpected error:", err)
+      logger.error("[BotExecutor] Unexpected error", {}, err instanceof Error ? err : new Error(String(err)))
     }
 
     // Sleep between iterations (check every 30 seconds)
@@ -287,7 +290,7 @@ async function executeBotStrategies() {
 // Allow running directly
 if (require.main === module) {
   executeBotStrategies().catch((err) => {
-    console.error("[BotExecutor] Worker failed:", err)
+    logger.error("[BotExecutor] Worker failed", {}, err instanceof Error ? err : new Error(String(err)))
     process.exit(1)
   })
 }
