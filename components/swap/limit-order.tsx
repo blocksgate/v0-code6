@@ -45,24 +45,39 @@ export function LimitOrder({ userAddress, chainId = 1 }: LimitOrderProps) {
   const fetchOrders = async () => {
     if (!connected) {
       setOrdersLoading(false)
+      setOrders([])
       return
     }
 
     try {
       setOrdersLoading(true)
+      // Use the API client for consistency
       const response = await fetch("/api/orders?status=pending", {
         credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
       })
 
       if (!response.ok) {
-        throw new Error("Failed to fetch orders")
+        // For 401, user might be wallet-only - that's okay, just return empty
+        if (response.status === 401) {
+          console.log("[LimitOrder] Not authenticated - wallet-only mode")
+          setOrders([])
+          return
+        }
+        throw new Error(`Failed to fetch orders: ${response.status}`)
       }
 
       const data = await response.json()
       setOrders(data.orders || [])
     } catch (error) {
       console.error("[LimitOrder] Error fetching orders:", error)
-      toast.error("Failed to load orders")
+      // Don't show error toast for wallet-only users - empty state is expected
+      if (error instanceof Error && !error.message.includes("401")) {
+        toast.error("Failed to load orders")
+      }
+      setOrders([])
     } finally {
       setOrdersLoading(false)
     }

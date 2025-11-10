@@ -1,3 +1,4 @@
 {
-    "github.copilot.chat.virtualTools.threshold": 128
+    "github.copilot.chat.virtualTools.threshold": 128,
+    "vercelVSCode.accessToken": "wxAltzpUadgvAtOM5Gx1v20d"
 }

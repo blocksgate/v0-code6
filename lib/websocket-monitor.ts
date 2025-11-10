@@ -1,4 +1,8 @@
 // Real-time WebSocket monitoring for mempool and pool updates
+// Now supports Flashbots RPC-based mempool monitoring
+
+import { getFlashbotsMempoolMonitor } from "./flashbots-mempool-monitor"
+import { config } from "./config"
 
 export interface MempoolEvent {
   txHash: string
@@ -54,14 +58,50 @@ class WebSocketMonitor {
   }
 
   private initializeConnections() {
-    const providers = [
-      { name: "mempool", url: "wss://api.alchemy.com/ws/mempool" },
-      { name: "pools", url: "wss://api.alchemy.com/ws/pools" },
-    ]
+    // Initialize Flashbots mempool monitoring if enabled
+    if (config.flashbots.enableMempoolMonitoring) {
+      try {
+        const flashbotsMonitor = getFlashbotsMempoolMonitor()
+        if (flashbotsMonitor) {
+          // Listen to Flashbots mempool events
+          flashbotsMonitor.on("mempool-tx", (tx: MempoolEvent) => {
+            // Forward to our internal event system
+            this.handleMempoolTransaction(tx)
+          })
 
-    providers.forEach((provider) => {
-      this.connectToProvider(provider.name, provider.url)
-    })
+          flashbotsMonitor.on("error", (error: any) => {
+            console.error("[WebSocket Monitor] Flashbots mempool error:", error)
+            this.emit("error", { provider: "flashbots-mempool", error })
+          })
+
+          console.log("[WebSocket Monitor] Flashbots mempool monitoring enabled")
+          return
+        }
+      } catch (error) {
+        console.error("[WebSocket Monitor] Failed to initialize Flashbots mempool monitoring:", error)
+      }
+    }
+
+    // Fallback: Alchemy doesn't provide public WebSocket endpoints for mempool/pools
+    console.log("[WebSocket Monitor] Mempool monitoring disabled - configure Flashbots for mempool monitoring")
+  }
+
+  /**
+   * Handle mempool transaction from Flashbots monitor
+   */
+  private handleMempoolTransaction(tx: MempoolEvent) {
+    // Add to buffer
+    this.mempoolBuffer.push(tx)
+    this.metrics.mempoolTxCount++
+    this.metrics.lastUpdate = Date.now()
+
+    // Keep buffer size manageable
+    if (this.mempoolBuffer.length > 1000) {
+      this.mempoolBuffer.shift()
+    }
+
+    // Emit event
+    this.emit("mempool-tx", tx)
   }
 
   private connectToProvider(name: string, url: string) {

@@ -45,10 +45,32 @@ class MEVProtector extends EventEmitter {
 
   private initializeMonitoring() {
     // Monitor mempool for potential MEV activity
-    this.wsMonitor.on("mempool", this.analyzeMempoolTransaction.bind(this))
+    // Flashbots mempool monitor emits "mempool-tx" events
+    this.wsMonitor.on("mempool-tx", (tx: any) => {
+      // Convert MempoolEvent to MempoolTransaction format
+      const mempoolTx: MempoolTransaction = {
+        hash: tx.txHash,
+        from: tx.from,
+        to: tx.to,
+        value: tx.value,
+        gasPrice: tx.gasPrice,
+        nonce: tx.nonce,
+        data: "", // MempoolEvent doesn't include data, would need to fetch separately
+        timestamp: tx.timestamp,
+      }
+      this.analyzeMempoolTransaction(mempoolTx)
+    })
 
     // Monitor blocks for transaction confirmations
-    provider.on("block", this.handleNewBlock.bind(this))
+    // Note: provider.on("block") requires an ethers provider with event support
+    // For now, we'll use polling instead if provider doesn't support events
+    try {
+      if (typeof provider.on === "function") {
+        provider.on("block", this.handleNewBlock.bind(this))
+      }
+    } catch (error) {
+      console.warn("[MEV Protector] Block monitoring not available, using polling instead")
+    }
   }
 
   private async analyzeMempoolTransaction(tx: MempoolTransaction) {

@@ -35,13 +35,18 @@ export interface TokenPrice {
 }
 
 // Popular token pairs for arbitrage detection
+// Note: Using WETH addresses for native ETH swaps (0x API requirement)
+const WETH_MAINNET = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+const USDC_MAINNET = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+const DAI_MAINNET = "0x6B175474E89094C44Da98b954EedeAC495271d0F"
+
 const POPULAR_PAIRS = [
-  { sell: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE", buy: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" }, // ETH -> USDC
-  { sell: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", buy: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" }, // USDC -> ETH
-  { sell: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE", buy: "0x6B175474E89094C44Da98b954EedeAC495271d0F" }, // ETH -> DAI
-  { sell: "0x6B175474E89094C44Da98b954EedeAC495271d0F", buy: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" }, // DAI -> ETH
-  { sell: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", buy: "0x6B175474E89094C44Da98b954EedeAC495271d0F" }, // USDC -> DAI
-  { sell: "0x6B175474E89094C44Da98b954EedeAC495271d0F", buy: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" }, // DAI -> USDC
+  { sell: WETH_MAINNET, buy: USDC_MAINNET }, // WETH -> USDC
+  { sell: USDC_MAINNET, buy: WETH_MAINNET }, // USDC -> WETH
+  { sell: WETH_MAINNET, buy: DAI_MAINNET }, // WETH -> DAI
+  { sell: DAI_MAINNET, buy: WETH_MAINNET }, // DAI -> WETH
+  { sell: USDC_MAINNET, buy: DAI_MAINNET }, // USDC -> DAI
+  { sell: DAI_MAINNET, buy: USDC_MAINNET }, // DAI -> USDC
 ]
 
 /**
@@ -53,8 +58,23 @@ async function getQuoteFromDex(
   sellAmount: string,
   chainId: number,
   excludedSources?: string[],
-): Promise<{ buyAmount: string; sources: string[]; gas: string; price: string } | null> {
+): Promise<{ buyAmount: string; sources: string[]; gas: string; estimatedGas: string; gasPrice: string; price: string } | null> {
   try {
+    // Validate inputs before making API call
+    if (!sellToken || !buyToken || !sellAmount) {
+      return null
+    }
+
+    // Validate sell amount
+    try {
+      const amount = BigInt(sellAmount)
+      if (amount <= 0) {
+        return null
+      }
+    } catch {
+      return null
+    }
+
     const quote = await zxClient.getQuote(chainId, sellToken, buyToken, sellAmount, 0.5)
 
     // Extract sources from quote
@@ -63,11 +83,19 @@ async function getQuoteFromDex(
     return {
       buyAmount: quote.buyAmount,
       sources,
-      gas: quote.gas || quote.estimatedGas || "0",
+      gas: quote.gas || quote.estimatedGas || "210000",
+      estimatedGas: quote.estimatedGas || quote.gas || "210000",
+      gasPrice: quote.gasPrice || "20000000000", // Default 20 gwei
       price: quote.price,
     }
   } catch (error) {
-    console.warn(`[Arbitrage] Failed to get quote for ${sellToken} -> ${buyToken}:`, error)
+    // Silently skip pairs that don't have routes - this is expected for some token pairs
+    // Only log if it's an unexpected error (not a "no route" error)
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    if (!errorMessage.includes("no Route matched") && !errorMessage.includes("No swap route")) {
+      // Only log non-route errors to avoid spam
+      console.debug(`[Arbitrage] Failed to get quote for ${sellToken} -> ${buyToken}:`, errorMessage)
+    }
     return null
   }
 }
@@ -154,56 +182,90 @@ export async function detectArbitrageOpportunities(
     const opportunities: ArbitrageOpportunity[] = []
     const pairs = tokenPairs || POPULAR_PAIRS
 
-    // Use a standard test amount (0.1 ETH worth)
-    const testAmount = ethers.parseEther("0.1").toString()
+    // Use a standard test amount (0.1 ETH worth) - convert to wei string
+    const testAmountWei = ethers.parseEther("0.1")
+    const testAmount = testAmountWei.toString()
 
     // For each token pair, get multiple quotes and compare
     for (const pair of pairs) {
       try {
+        // Skip if pair is invalid
+        if (!pair.sell || !pair.buy) {
+          continue
+        }
+
         // Get quotes with different parameters to potentially hit different DEXs
         const quote1 = await getQuoteFromDex(pair.sell, pair.buy, testAmount, chainId)
+        
+        // If first quote fails, skip this pair
+        if (!quote1) {
+          continue
+        }
+
         // Small delay to avoid rate limiting
-        await new Promise((resolve) => setTimeout(resolve, 100))
+        await new Promise((resolve) => setTimeout(resolve, 200))
+        
+        // Try reverse quote - but don't fail if it doesn't work
         const quote2 = await getQuoteFromDex(pair.buy, pair.sell, testAmount, chainId)
 
-        if (!quote1) continue
-
         // Check for triangular arbitrage: A -> B -> A
+        // Note: This is simplified - in reality, we'd need to account for different token decimals
         if (quote1 && quote2) {
-          const buyAmount1 = Number.parseFloat(ethers.formatEther(quote1.buyAmount))
-          const buyAmount2 = Number.parseFloat(ethers.formatEther(quote2.buyAmount))
+          try {
+            // Use the price from the quote instead of calculating from amounts
+            // The price field from 0x API gives us the exchange rate
+            const price1 = Number.parseFloat(quote1.price || "0")
+            const price2 = Number.parseFloat(quote2.price || "0")
 
-          // Calculate if we can profit from round trip
-          const testAmountNum = Number.parseFloat(ethers.formatEther(testAmount))
-          const roundTripAmount = buyAmount1 * (buyAmount2 / testAmountNum)
-          const profitPercent = ((roundTripAmount - testAmountNum) / testAmountNum) * 100
+            if (price1 === 0 || price2 === 0 || isNaN(price1) || isNaN(price2)) {
+              continue
+            }
 
-          if (profitPercent > minProfitPercent) {
-            // Calculate gas cost
-            const gasCost = Number.parseFloat(ethers.formatEther(quote1.gas)) * 2 // Two transactions
+            // Calculate round-trip: sell 1 unit of token A, get price1 of token B
+            // Then sell price1 of token B, get price1 * price2 of token A
+            // Profit = (price1 * price2) - 1
+            const roundTripPrice = price1 * price2
+            const profitPercent = (roundTripPrice - 1) * 100
+
+            // Only consider if profit is significant (accounting for gas and slippage)
+            // Need at least 2x min profit to account for gas costs
+            if (profitPercent < minProfitPercent * 2) {
+              continue
+            }
+
+            // Calculate gas cost (gas units * gas price)
+            // 0x API returns gas in units, we need to multiply by gas price to get ETH cost
+            const gasUnits1 = BigInt(quote1.gas || "210000")
+            const gasUnits2 = BigInt(quote2.gas || "210000")
+            const gasPriceWei = BigInt(quote1.gasPrice || quote2.gasPrice || "20000000000") // Default 20 gwei
+            const totalGasCostWei = (gasUnits1 + gasUnits2) * gasPriceWei
+            const gasCostETH = Number.parseFloat(ethers.formatEther(totalGasCostWei.toString()))
+            
             const ethPrice = await priceFeed.getPrice("ethereum").catch(() => 2500)
-            const gasCostUSD = gasCost * ethPrice
+            const gasCostUSD = gasCostETH * ethPrice
 
-            // Calculate net profit
-            const profitUSD = await calculateProfitUSD(profitPercent, testAmount, pair.sell, pair.buy)
-            const netProfitUSD = (Number.parseFloat(profitUSD) - gasCostUSD).toFixed(2)
+            // Estimate profit in USD (simplified - using test amount)
+            const testAmountNum = Number.parseFloat(ethers.formatEther(testAmount))
+            const estimatedProfitUSD = (testAmountNum * ethPrice * profitPercent) / 100
+            const netProfitUSD = Math.max(0, estimatedProfitUSD - gasCostUSD)
 
-            if (Number.parseFloat(netProfitUSD) > 0) {
+            // Only add if net profit is positive and significant
+            if (netProfitUSD > 1) { // At least $1 profit
               opportunities.push({
                 id: `arb-${pair.sell}-${pair.buy}-${Date.now()}`,
                 sellToken: pair.sell,
                 buyToken: pair.buy,
-                profitUSD,
+                profitUSD: estimatedProfitUSD.toFixed(2),
                 profitPercent: Number.parseFloat(profitPercent.toFixed(2)),
                 sources: [...new Set([...quote1.sources, ...quote2.sources])],
                 paths: {
-                  sourceRoute: quote1.sources,
-                  destinationRoute: quote2.sources,
+                  sourceRoute: quote1.sources || [],
+                  destinationRoute: quote2.sources || [],
                 },
                 expiresIn: 60, // 60 seconds
-                estimatedGas: `${gasCost.toFixed(6)} ETH`,
+                estimatedGas: `${gasCostETH.toFixed(6)} ETH`,
                 gasCostUSD: gasCostUSD.toFixed(2),
-                netProfitUSD,
+                netProfitUSD: netProfitUSD.toFixed(2),
                 riskScore: calculateRiskScore(profitPercent, gasCostUSD),
                 timestamp: Date.now(),
                 chainId,
@@ -211,60 +273,19 @@ export async function detectArbitrageOpportunities(
                 buyAmount: quote1.buyAmount,
               })
             }
-          }
-        }
-
-        // Also check direct arbitrage by comparing with different sell amounts
-        // (This simulates checking different DEXs by using different amounts)
-        const quote3 = await getQuoteFromDex(pair.sell, pair.buy, ethers.parseEther("1").toString(), chainId)
-
-        if (quote1 && quote3) {
-          const buyAmount1 = Number.parseFloat(ethers.formatEther(quote1.buyAmount))
-          const buyAmount3 = Number.parseFloat(ethers.formatEther(quote3.buyAmount))
-
-          // Normalize to per-unit comparison
-          const rate1 = buyAmount1 / Number.parseFloat(ethers.formatEther(testAmount))
-          const rate3 = buyAmount3 / Number.parseFloat(ethers.formatEther(ethers.parseEther("1").toString()))
-
-          const priceDiff = Math.abs(rate1 - rate3) / Math.min(rate1, rate3) * 100
-
-          if (priceDiff > minProfitPercent) {
-            const bestRate = Math.max(rate1, rate3)
-            const worstRate = Math.min(rate1, rate3)
-            const profitPercent = ((bestRate - worstRate) / worstRate) * 100
-
-            const gasCost = Number.parseFloat(ethers.formatEther(quote1.gas))
-            const ethPrice = await priceFeed.getPrice("ethereum").catch(() => 2500)
-            const gasCostUSD = gasCost * ethPrice
-
-            const profitUSD = await calculateProfitUSD(profitPercent, testAmount, pair.sell, pair.buy)
-            const netProfitUSD = (Number.parseFloat(profitUSD) - gasCostUSD).toFixed(2)
-
-            if (Number.parseFloat(netProfitUSD) > 0) {
-              opportunities.push({
-                id: `arb-direct-${pair.sell}-${pair.buy}-${Date.now()}`,
-                sellToken: pair.sell,
-                buyToken: pair.buy,
-                profitUSD,
-                profitPercent: Number.parseFloat(profitPercent.toFixed(2)),
-                sources: [...new Set([...quote1.sources, ...quote3.sources])],
-                paths: {
-                  sourceRoute: quote1.sources,
-                  destinationRoute: quote3.sources,
-                },
-                expiresIn: 60,
-                estimatedGas: `${gasCost.toFixed(6)} ETH`,
-                gasCostUSD: gasCostUSD.toFixed(2),
-                netProfitUSD,
-                riskScore: calculateRiskScore(profitPercent, gasCostUSD),
-                timestamp: Date.now(),
-                chainId,
-                sellAmount: testAmount,
-                buyAmount: quote1.buyAmount,
-              })
+          } catch (calcError) {
+            // Skip this opportunity if calculation fails - this is expected for many pairs
+            // Only log if it's an unexpected error
+            if (calcError instanceof Error && !calcError.message.includes("no Route")) {
+              console.debug(`[Arbitrage] Calculation error for ${pair.sell} -> ${pair.buy}:`, calcError.message)
             }
+            continue
           }
         }
+
+        // Skip direct arbitrage detection for now to reduce API calls and errors
+        // This can be re-enabled later if needed
+        // The triangular arbitrage detection above should be sufficient
       } catch (error) {
         console.error(`[Arbitrage] Error processing pair ${pair.sell} -> ${pair.buy}:`, error)
         continue

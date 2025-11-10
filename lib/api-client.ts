@@ -1,7 +1,8 @@
 // Utility client for making authenticated API requests
 
 export async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const url = `${process.env.NEXT_PUBLIC_API_URL || ""}/api${endpoint}`
+  // Use relative path for Next.js API routes
+  const url = `/api${endpoint}`
 
   const response = await fetch(url, {
     ...options,

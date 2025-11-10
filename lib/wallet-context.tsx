@@ -8,7 +8,7 @@ import { web3Provider } from "@/lib/web3-provider"
 interface WalletContextType {
   address: string | null
   connected: boolean
-  connect: (type?: "metamask" | "walletconnect" | "demo") => Promise<void>
+  connect: (type: "metamask" | "walletconnect" | "demo") => Promise<void>
   disconnect: () => void
   isConnecting: boolean
   error: string | null
@@ -28,7 +28,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [isDemoMode, setIsDemoMode] = useState(false)
   const [walletType, setWalletType] = useState<"metamask" | "walletconnect" | "demo">("demo")
 
-  const connect = useCallback(async (type: "metamask" | "walletconnect" | "demo" = "demo") => {
+  const connect = useCallback(async (type: "metamask" | "walletconnect" | "demo") => {
     setIsConnecting(true)
     setError(null)
     try {
@@ -50,22 +50,24 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           setIsDemoMode(false)
           localStorage.setItem("walletAddress", accounts[0])
           localStorage.setItem("walletType", "walletconnect")
+          localStorage.removeItem("demoMode")
           // Set cookie for server-side middleware access
           document.cookie = `walletAddress=${accounts[0]}; path=/; max-age=86400; SameSite=Lax`
           document.cookie = `walletType=walletconnect; path=/; max-age=86400; SameSite=Lax`
           console.log("[v0] WalletConnect connected:", accounts[0])
+          
+          // Initialize Web3 provider for blockchain interactions
+          try {
+            await web3Provider.initialize("metamask") // WalletConnect uses similar provider
+            console.log("[v0] Web3 provider initialized")
+          } catch (error) {
+            console.error("[v0] Web3 initialization error:", error)
+          }
           return
         }
       } else if (type === "metamask") {
         if (!window.ethereum) {
-          console.log("[v0] No wallet detected, entering demo mode")
-          setIsDemoMode(true)
-          setAddress("0x1234567890123456789012345678901234567890")
-          setConnected(true)
-          setWalletType("demo")
-          localStorage.setItem("walletAddress", "0x1234567890123456789012345678901234567890")
-          localStorage.setItem("demoMode", "true")
-          return
+          throw new Error("MetaMask is not installed. Please install MetaMask to continue.")
         }
 
         const accounts = await window.ethereum.request({
@@ -79,6 +81,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             console.log("[v0] Web3 provider initialized")
           } catch (error) {
             console.error("[v0] Web3 initialization error:", error)
+            // Don't throw - continue with connection even if Web3 init fails
           }
 
           setAddress(accounts[0])
@@ -93,28 +96,34 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           document.cookie = `walletType=metamask; path=/; max-age=86400; SameSite=Lax`
           console.log("[v0] MetaMask connected:", accounts[0])
           console.log("[v0] Web3 ready for blockchain interactions")
+        } else {
+          throw new Error("No accounts found. Please unlock MetaMask and try again.")
         }
       } else if (type === "demo") {
+        // Only allow demo mode if explicitly requested
         setIsDemoMode(true)
         setAddress("0x1234567890123456789012345678901234567890")
         setConnected(true)
         setWalletType("demo")
         localStorage.setItem("walletAddress", "0x1234567890123456789012345678901234567890")
+        localStorage.setItem("walletType", "demo")
         localStorage.setItem("demoMode", "true")
         // Set cookie for server-side middleware access
         document.cookie = `walletAddress=0x1234567890123456789012345678901234567890; path=/; max-age=86400; SameSite=Lax`
         document.cookie = `walletType=demo; path=/; max-age=86400; SameSite=Lax`
         console.log("[v0] Demo mode activated")
+      } else {
+        throw new Error("Invalid wallet type. Please use 'metamask' or 'walletconnect'.")
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Failed to connect wallet"
-      console.log("[v0] Connection error:", errorMessage)
+      console.error("[v0] Connection error:", errorMessage)
       setError(errorMessage)
       setConnected(false)
       setAddress(null)
-      localStorage.removeItem("walletAddress")
-      localStorage.removeItem("walletType")
-      localStorage.removeItem("demoMode")
+      setIsDemoMode(false)
+      setWalletType("demo")
+      // Don't clear localStorage on error - user might want to retry
     } finally {
       setIsConnecting(false)
     }

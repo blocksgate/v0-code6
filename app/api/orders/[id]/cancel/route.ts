@@ -23,8 +23,17 @@ export async function POST(
 
     // Authenticate
     const auth = await authenticateRequest(request)
-    if (!auth || auth.isWalletOnly) {
+    if (!auth) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    // For wallet-only users, return success (orders are not persisted)
+    if (auth.isWalletOnly) {
+      return NextResponse.json({
+        success: true,
+        message: "Order cancelled locally. Connect with email to sync orders across devices.",
+        order: { id: params.id, status: "cancelled" },
+      })
     }
 
     const supabase = await createClient()

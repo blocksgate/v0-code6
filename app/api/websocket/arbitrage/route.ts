@@ -29,27 +29,44 @@ export async function GET(request: Request) {
         // Send initial connection message
         controller.enqueue(encoder.encode("data: {\"type\":\"connected\"}\n\n"))
 
-        // Poll for arbitrage opportunities every 5 seconds
+        // Poll for arbitrage opportunities every 30 seconds (reduced frequency to avoid API rate limits)
         const interval = setInterval(async () => {
           try {
             // Import here to avoid circular dependencies
             const { detectArbitrageOpportunities } = await import("@/lib/arbitrage-detector")
             
-            const opportunities = await detectArbitrageOpportunities(1, undefined, 0.1)
+            // Only detect if 0x API key is configured
+            const hasApiKey = process.env.ZX_API_KEY || process.env.NEXT_PUBLIC_0X_API_KEY
+            if (!hasApiKey) {
+              // Send message that API key is needed
+              controller.enqueue(encoder.encode(`data: {\"type\":\"info\",\"message\":\"0x API key not configured - arbitrage detection disabled\"}\n\n`))
+              return
+            }
+            
+            const opportunities = await detectArbitrageOpportunities(1, undefined, 0.5) // Increased min profit to 0.5%
             
             // Send opportunities as SSE events
-            for (const opp of opportunities) {
-              const data = JSON.stringify({
-                type: "arbitrage_opportunity",
-                ...opp,
-              })
-              controller.enqueue(encoder.encode(`data: ${data}\n\n`))
+            if (opportunities.length > 0) {
+              for (const opp of opportunities) {
+                const data = JSON.stringify({
+                  type: "arbitrage_opportunity",
+                  ...opp,
+                })
+                controller.enqueue(encoder.encode(`data: ${data}\n\n`))
+              }
+            } else {
+              // Send heartbeat to keep connection alive
+              controller.enqueue(encoder.encode(`data: {\"type\":\"heartbeat\",\"timestamp\":${Date.now()}}\n\n`))
             }
           } catch (error) {
-            console.error("[Arbitrage SSE] Error:", error)
-            controller.enqueue(encoder.encode(`data: {\"type\":\"error\",\"message\":\"${error}\"}\n\n`))
+            // Only log unexpected errors, not "no route" errors
+            const errorMessage = error instanceof Error ? error.message : String(error)
+            if (!errorMessage.includes("no Route") && !errorMessage.includes("No swap route")) {
+              console.error("[Arbitrage SSE] Error:", error)
+            }
+            // Don't send error to client for expected errors
           }
-        }, 5000) // Poll every 5 seconds
+        }, 30000) // Poll every 30 seconds to reduce API calls
 
         // Clean up on client disconnect
         request.signal.addEventListener("abort", () => {

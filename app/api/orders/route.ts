@@ -2,15 +2,13 @@ import { createClient } from "@/lib/supabase/server"
 import { type NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { rateLimit } from "@/lib/middleware/rateLimiter"
+import { authenticateRequest, getWalletUserId } from "@/lib/supabase/wallet-auth"
 
 export async function GET(request: NextRequest) {
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
+  // Authenticate using either Supabase or wallet
+  const auth = await authenticateRequest(request)
+  
+  if (!auth) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
@@ -18,7 +16,20 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const status = searchParams.get("status")
 
-    let query = supabase.from("orders").select("*").eq("user_id", user.id).order("created_at", { ascending: false })
+    // For wallet-only users, return mock data for now
+    // In production, you'd store orders in a separate table or use wallet address as key
+    if (auth.isWalletOnly) {
+      // Return empty orders for wallet-only users (no database access)
+      // You can enhance this to use a local storage or separate API
+      return NextResponse.json({
+        orders: [],
+        message: "Wallet-only mode: Connect with email to sync orders across devices"
+      })
+    }
+
+    // Supabase authenticated user - fetch from database
+    const supabase = await createClient()
+    let query = supabase.from("orders").select("*").eq("user_id", auth.userId!).order("created_at", { ascending: false })
 
     if (status) {
       query = query.eq("status", status)
@@ -28,7 +39,7 @@ export async function GET(request: NextRequest) {
 
     if (error) throw error
 
-    return NextResponse.json({ orders: data })
+    return NextResponse.json({ orders: data || [] })
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to fetch orders" },
@@ -38,13 +49,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
+  // Authenticate using either Supabase or wallet
+  const auth = await authenticateRequest(request)
+  
+  if (!auth) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
@@ -56,19 +64,41 @@ export async function POST(request: NextRequest) {
     }
     const body = await request.json()
 
-    // Validate incoming order payload to prevent malformed data being written to DB
+    // Validate incoming order payload - match database schema from 004_create_orders.sql
     const OrderSchema = z.object({
-      type: z.enum(["limit", "market"]).optional(),
+      // Database schema fields (from 004_create_orders.sql)
       token_in: z.string().min(1),
       token_out: z.string().min(1),
-      // accept string or number for amount and normalize to string
-      amount: z.union([z.string().min(1), z.number()]).transform((v) => String(v)),
-      // optional price for limit orders
+      amount_in: z.union([z.string().min(1), z.number()]).optional(),
+      min_amount_out: z.union([z.string(), z.number()]).optional(),
+      price_target: z.union([z.string(), z.number()]).optional(),
+      order_type: z.enum(["limit", "dca", "stop-loss"]).optional(),
+      chain_id: z.number().optional(),
+      status: z.enum(["pending", "filled", "cancelled", "expired"]).optional(),
+      expires_at: z.string().optional().nullable(),
+      // Legacy field support (for backward compatibility)
+      type: z.enum(["limit", "market"]).optional(),
+      amount: z.union([z.string(), z.number()]).optional(),
       price: z.union([z.string(), z.number()]).optional(),
       side: z.enum(["buy", "sell"]).optional(),
-      chain_id: z.number().optional(),
-      status: z.string().optional(),
       metadata: z.any().optional(),
+    }).transform((data) => {
+      // Normalize to database schema format with required fields
+      const amountIn = data.amount_in || data.amount
+      const priceTarget = data.price_target !== undefined ? Number(data.price_target) : (data.price !== undefined ? Number(data.price) : 0)
+      const minAmountOut = data.min_amount_out || (amountIn && priceTarget ? String(Number(amountIn) * priceTarget) : "0")
+      
+      return {
+        token_in: data.token_in,
+        token_out: data.token_out,
+        amount_in: amountIn ? String(amountIn) : "0",
+        min_amount_out: minAmountOut,
+        price_target: priceTarget,
+        order_type: data.order_type || data.type || "limit",
+        chain_id: data.chain_id || 1, // Default to Ethereum mainnet
+        status: data.status || "pending",
+        expires_at: data.expires_at || null,
+      }
     })
 
     const parsed = OrderSchema.safeParse(body)
@@ -78,10 +108,23 @@ export async function POST(request: NextRequest) {
 
     const orderPayload = parsed.data
 
+    // For wallet-only users, return success but don't persist to database
+    if (auth.isWalletOnly) {
+      return NextResponse.json({
+        id: `temp_${Date.now()}`,
+        ...orderPayload,
+        user_id: getWalletUserId(auth.walletAddress!),
+        created_at: new Date().toISOString(),
+        message: "Order created locally. Connect with email to sync across devices."
+      }, { status: 201 })
+    }
+
+    // Supabase authenticated user - persist to database
+    const supabase = await createClient()
     const { data, error } = await supabase
       .from("orders")
       .insert({
-        user_id: user.id,
+        user_id: auth.userId!,
         ...orderPayload,
       })
       .select()
