@@ -1,8 +1,46 @@
-import { createClient } from "@supabase/supabase-js"
-import fs from "fs"
-import path from "path"
+// JavaScript version of migration script (fallback if TypeScript doesn't work)
+const { createClient } = require("@supabase/supabase-js")
+const fs = require("fs")
+const path = require("path")
 
-// Get scripts directory - use process.cwd() as base and navigate to scripts folder
+// Load environment variables from .env.local if it exists
+function loadEnvFile(filePath) {
+  try {
+    if (fs.existsSync(filePath)) {
+      const envFile = fs.readFileSync(filePath, "utf-8")
+      envFile.split("\n").forEach((line) => {
+        // Skip comments and empty lines
+        const trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith("#")) {
+          return
+        }
+        // Match KEY=VALUE pattern
+        const match = trimmed.match(/^([^=#]+)=(.*)$/)
+        if (match) {
+          const key = match[1].trim()
+          let value = match[2].trim()
+          // Remove quotes if present
+          if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+            value = value.slice(1, -1)
+          }
+          // Only set if not already in process.env
+          if (key && !process.env[key]) {
+            process.env[key] = value
+          }
+        }
+      })
+      return true
+    }
+  } catch (error) {
+    console.warn(`Warning: Could not load ${filePath}:`, error.message)
+  }
+  return false
+}
+
+// Try loading from .env.local first, then .env
+loadEnvFile(path.join(process.cwd(), ".env.local")) || loadEnvFile(path.join(process.cwd(), ".env"))
+
+// Get scripts directory
 const scriptsDir = path.join(process.cwd(), "scripts")
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -22,7 +60,7 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
   },
 })
 
-// All migrations in order (excluding duplicates and function files)
+// All migrations in order
 const migrations = [
   "001_create_profiles.sql",
   "002_create_trades.sql",
@@ -45,10 +83,8 @@ const functions = [
 
 /**
  * Execute SQL via Supabase REST API
- * Note: This requires the exec_sql function to exist in Supabase
- * If it doesn't exist, you'll need to run migrations via Supabase Dashboard
  */
-async function executeSQL(sql: string, migrationName: string): Promise<{ success: boolean; error?: string }> {
+async function executeSQL(sql, migrationName) {
   try {
     // Split SQL into individual statements
     const statements = sql
@@ -58,16 +94,14 @@ async function executeSQL(sql: string, migrationName: string): Promise<{ success
 
     // Try to execute via Supabase RPC (if exec_sql function exists)
     for (const statement of statements) {
-      if (statement.length < 10) continue // Skip very short statements
+      if (statement.length < 10) continue
 
       try {
-        // Note: This requires an exec_sql function in Supabase
-        // If it doesn't exist, this will fail and you should use Supabase Dashboard
         const { error } = await supabase.rpc("exec_sql", { sql_query: statement })
 
         if (error) {
           // Check if error is about missing function
-          if (error.message.includes("function") && error.message.includes("does not exist")) {
+          if (error.message && (error.message.includes("function") && error.message.includes("does not exist"))) {
             throw new Error(
               "exec_sql function not found. Please run migrations via Supabase Dashboard (see MIGRATION_INSTRUCTIONS.md)"
             )
@@ -78,21 +112,21 @@ async function executeSQL(sql: string, migrationName: string): Promise<{ success
             console.warn(`   ⚠️  Statement warning: ${error.message.substring(0, 80)}`)
           }
         }
-      } catch (err: any) {
+      } catch (err) {
         // If RPC doesn't exist, throw error to use Dashboard method
-        if (err.message?.includes("exec_sql") || err.message?.includes("function")) {
+        if (err.message && (err.message.includes("exec_sql") || err.message.includes("function"))) {
           throw err
         }
         
         // Ignore "already exists" errors
-        if (!err.message?.includes("already exists") && !err.message?.includes("duplicate")) {
-          console.warn(`   ⚠️  Error in statement: ${err.message?.substring(0, 80) || String(err)}`)
+        if (!err.message || (!err.message.includes("already exists") && !err.message.includes("duplicate"))) {
+          console.warn(`   ⚠️  Error in statement: ${(err.message || String(err)).substring(0, 80)}`)
         }
       }
     }
 
     return { success: true }
-  } catch (error: any) {
+  } catch (error) {
     const errorMessage = error?.message || String(error)
     
     // Check if error is about existing objects (which is fine)
@@ -101,14 +135,14 @@ async function executeSQL(sql: string, migrationName: string): Promise<{ success
       errorMessage.includes("duplicate") ||
       (errorMessage.includes("relation") && errorMessage.includes("already"))
     ) {
-      return { success: true } // Table/object already exists, that's okay
+      return { success: true }
     }
     
     return { success: false, error: errorMessage }
   }
 }
 
-async function runMigration(migrationFile: string): Promise<boolean> {
+async function runMigration(migrationFile) {
   const filePath = path.join(scriptsDir, migrationFile)
 
   if (!fs.existsSync(filePath)) {
@@ -128,7 +162,7 @@ async function runMigration(migrationFile: string): Promise<boolean> {
       return true
     } else {
       // If exec_sql function doesn't exist, provide instructions
-      if (result.error?.includes("exec_sql") || result.error?.includes("function")) {
+      if (result.error && (result.error.includes("exec_sql") || result.error.includes("function"))) {
         console.error(`❌ [${migrationFile}] Error: ${result.error}`)
         console.error("\n💡 Solution: Run migrations via Supabase Dashboard")
         console.error("   1. Go to: https://app.supabase.com")
@@ -142,9 +176,9 @@ async function runMigration(migrationFile: string): Promise<boolean> {
       console.error(`❌ [${migrationFile}] Error: ${result.error}`)
       return false
     }
-  } catch (err: any) {
+  } catch (err) {
     // Check if it's the exec_sql function error
-    if (err.message?.includes("exec_sql") || err.message?.includes("function")) {
+    if (err.message && (err.message.includes("exec_sql") || err.message.includes("function"))) {
       console.error(`❌ [${migrationFile}] Error: ${err.message}`)
       console.error("\n💡 Solution: Run migrations via Supabase Dashboard")
       console.error("   See MIGRATION_INSTRUCTIONS.md for detailed steps\n")
@@ -164,7 +198,7 @@ async function runMigrations() {
   let hasExecSql = false
   try {
     const { error } = await supabase.rpc("exec_sql", { sql_query: "SELECT 1" })
-    if (!error || error.message.includes("already exists") || error.message.includes("duplicate")) {
+    if (!error || (error.message && (error.message.includes("already exists") || error.message.includes("duplicate")))) {
       hasExecSql = true
     }
   } catch {
@@ -187,13 +221,13 @@ async function runMigrations() {
     functions.forEach((f, i) => {
       console.log(`   ${migrations.length + i + 1}. ${f}`)
     })
-    console.log("\n💡 Alternatively, you can use: npm run migrate:dashboard")
+    console.log("\n💡 Alternatively, you can use: npm run migrate:simple")
     process.exit(0)
   }
 
   let successCount = 0
   let failCount = 0
-  const results: Array<{ file: string; success: boolean }> = []
+  const results = []
 
   // Run table migrations first
   for (const migration of migrations) {
@@ -258,3 +292,4 @@ runMigrations().catch((err) => {
   console.error("❌ Fatal error:", err)
   process.exit(1)
 })
+

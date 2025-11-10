@@ -1,4 +1,44 @@
-import { createClient } from "@supabase/supabase-js"
+// JavaScript version of verification script (fallback if TypeScript doesn't work)
+const { createClient } = require("@supabase/supabase-js")
+const fs = require("fs")
+const path = require("path")
+
+// Load environment variables from .env.local if it exists
+function loadEnvFile(filePath) {
+  try {
+    if (fs.existsSync(filePath)) {
+      const envFile = fs.readFileSync(filePath, "utf-8")
+      envFile.split("\n").forEach((line) => {
+        // Skip comments and empty lines
+        const trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith("#")) {
+          return
+        }
+        // Match KEY=VALUE pattern
+        const match = trimmed.match(/^([^=#]+)=(.*)$/)
+        if (match) {
+          const key = match[1].trim()
+          let value = match[2].trim()
+          // Remove quotes if present
+          if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+            value = value.slice(1, -1)
+          }
+          // Only set if not already in process.env
+          if (key && !process.env[key]) {
+            process.env[key] = value
+          }
+        }
+      })
+      return true
+    }
+  } catch (error) {
+    console.warn(`Warning: Could not load ${filePath}:`, error.message)
+  }
+  return false
+}
+
+// Try loading from .env.local first, then .env
+loadEnvFile(path.join(process.cwd(), ".env.local")) || loadEnvFile(path.join(process.cwd(), ".env"))
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -34,7 +74,7 @@ const expectedTables = [
   "lp_positions",
 ]
 
-async function checkTable(tableName: string): Promise<{ exists: boolean; rlsEnabled: boolean; error?: string }> {
+async function checkTable(tableName) {
   try {
     // Try to query the table
     const { error: selectError } = await supabase
@@ -44,13 +84,11 @@ async function checkTable(tableName: string): Promise<{ exists: boolean; rlsEnab
 
     if (selectError) {
       // Check if it's a "relation does not exist" error
-      if (selectError.message.includes("does not exist") || selectError.code === "42P01") {
+      if (selectError.message && (selectError.message.includes("does not exist") || selectError.code === "42P01")) {
         return { exists: false, rlsEnabled: false, error: selectError.message }
       }
       // Other errors might mean table exists but RLS is blocking or permissions issue
-      // For service role, we can still access, so table likely exists
-      if (selectError.code === "42501" || selectError.message.includes("permission")) {
-        // Permission error but table exists
+      if (selectError.code === "42501" || (selectError.message && selectError.message.includes("permission"))) {
         return { exists: true, rlsEnabled: true, error: selectError.message }
       }
       // Other errors - assume table exists
@@ -58,10 +96,8 @@ async function checkTable(tableName: string): Promise<{ exists: boolean; rlsEnab
     }
 
     // Table exists and is accessible
-    // RLS status checking requires direct SQL query which we can't easily do
-    // Assume RLS is enabled (default for Supabase tables with RLS policies)
     return { exists: true, rlsEnabled: true }
-  } catch (error: any) {
+  } catch (error) {
     return {
       exists: false,
       rlsEnabled: false,
@@ -74,7 +110,7 @@ async function verifyMigrations() {
   console.log("🔍 Verifying database migrations...\n")
   console.log(`📁 Supabase URL: ${supabaseUrl?.substring(0, 30)}...\n`)
 
-  const results: Array<{ table: string; exists: boolean; rlsEnabled: boolean; error?: string }> = []
+  const results = []
 
   for (const table of expectedTables) {
     const result = await checkTable(table)
