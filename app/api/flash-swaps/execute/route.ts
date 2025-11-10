@@ -4,11 +4,12 @@ import { createClient } from "@/lib/supabase/server"
 import { zxClient } from "@/lib/0x-client"
 import { recordTrade } from "@/lib/trade-service"
 import { rateLimit } from "@/lib/middleware/rateLimiter"
+import { getFlashLoanAggregator } from "@/lib/flash-loan-aggregator"
 import { ethers } from "ethers"
 
 /**
  * POST /api/flash-swaps/execute
- * Execute a flash swap strategy
+ * Execute a flash swap strategy with flash loan aggregator
  * Note: Flash swaps require a smart contract to execute atomically
  * This endpoint returns the transaction data for the user to execute
  */
@@ -25,7 +26,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { tokenIn, tokenOut, amount, chainId = 1, txHash } = body
+    const { tokenIn, tokenOut, amount, chainId = 1, txHash, useFlashLoan = true } = body
 
     if (!tokenIn || !tokenOut || !amount) {
       return NextResponse.json({ error: "Missing required parameters" }, { status: 400 })
@@ -37,6 +38,25 @@ export async function POST(request: NextRequest) {
     // Get quotes for both legs of the flash swap
     const quote1 = await zxClient.getQuote(chainId, tokenIn, tokenOut, amountWei, 0.5)
     const quote2 = await zxClient.getQuote(chainId, tokenOut, tokenIn, quote1.buyAmount, 0.5)
+
+    // Calculate profit
+    const amountIn = Number.parseFloat(amount)
+    const amountOut = Number.parseFloat(ethers.formatEther(quote1.buyAmount))
+    const amountBack = Number.parseFloat(ethers.formatEther(quote2.buyAmount))
+    const profit = amountBack - amountIn
+
+    // Get flash loan aggregator if using flash loans
+    let flashLoanData = null
+    if (useFlashLoan && profit > 0) {
+      try {
+        const aggregator = getFlashLoanAggregator()
+        const profitEstimate = profit * 1000 // Convert to wei-like value
+        flashLoanData = await aggregator.aggregateFlashLoan(amountWei, tokenIn, profitEstimate)
+      } catch (error) {
+        console.warn("[FlashSwap Execute] Flash loan aggregation failed:", error)
+        // Continue without flash loan
+      }
+    }
 
     // If txHash provided, record the trade
     if (txHash) {
@@ -77,6 +97,8 @@ export async function POST(request: NextRequest) {
         tokenOut,
         amount,
         chainId,
+        profit: profit.toFixed(6),
+        profitPercent: ((profit / amountIn) * 100).toFixed(2),
       },
       quotes: {
         leg1: {
@@ -97,6 +119,20 @@ export async function POST(request: NextRequest) {
           buyAmount: quote2.buyAmount,
           sellAmount: quote2.sellAmount,
         },
+      },
+      flashLoan: flashLoanData
+        ? {
+            provider: flashLoanData.optimalProvider.name,
+            address: flashLoanData.optimalProvider.address,
+            fee: flashLoanData.totalFee,
+            estimatedProfit: flashLoanData.estimatedProfit,
+            gasEstimate: flashLoanData.executionPath.gasEstimate,
+          }
+        : null,
+      execution: {
+        totalGas: (Number.parseInt(quote1.gas || "0") + Number.parseInt(quote2.gas || "0")).toString(),
+        estimatedProfit: profit.toFixed(6),
+        isProfitable: profit > 0,
       },
       message:
         "Flash swaps require a smart contract. Use the provided transaction data to execute via a flash loan contract.",
