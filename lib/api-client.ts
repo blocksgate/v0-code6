@@ -1,8 +1,7 @@
 // Utility client for making authenticated API requests
 
 export async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  // Use relative path for Next.js API routes
-  const url = `/api${endpoint}`
+  const url = `${process.env.NEXT_PUBLIC_API_URL || ""}/api${endpoint}`
 
   const response = await fetch(url, {
     ...options,
@@ -10,17 +9,11 @@ export async function apiRequest<T>(endpoint: string, options: RequestInit = {})
       "Content-Type": "application/json",
       ...options.headers,
     },
-    credentials: "include", // Include cookies for authentication
   })
 
   if (!response.ok) {
-    try {
-      const error = await response.json()
-      throw new Error(error.error || error.message || `API request failed: ${response.status}`)
-    } catch (e) {
-      // If response is not JSON, throw generic error
-      throw new Error(`API request failed: ${response.status} ${response.statusText}`)
-    }
+    const error = await response.json()
+    throw new Error(error.error || `API request failed: ${response.status}`)
   }
 
   return response.json()

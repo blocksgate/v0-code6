@@ -116,19 +116,19 @@
 ### Required Variables
 \`\`\`env
 # Core
-ZX_API_KEY=your_0x_api_key
-NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_walletconnect_id
+ZX_API_KEY=your_0x_api_key_here
+NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_walletconnect_id_here
 
 # RPC Providers
-NEXT_PUBLIC_ALCHEMY_KEY=your_alchemy_key
-NEXT_PUBLIC_CHAINSTACK_KEY=your_chainstack_key
-NEXT_PUBLIC_INFURA_KEY=your_infura_key
-NEXT_PUBLIC_QUICKNODE_KEY=your_quicknode_key
-NEXT_PUBLIC_ANKR_KEY=your_ankr_key
+NEXT_PUBLIC_ALCHEMY_KEY=your_alchemy_key_here
+NEXT_PUBLIC_CHAINSTACK_KEY=your_chainstack_key_here
+NEXT_PUBLIC_INFURA_KEY=your_infura_key_here
+NEXT_PUBLIC_QUICKNODE_KEY=your_quicknode_key_here
+NEXT_PUBLIC_ANKR_KEY=your_ankr_key_here
 
 # WebSocket
-ALCHEMY_WEBSOCKET_KEY=your_alchemy_ws_key
-QUICKNODE_WEBSOCKET_KEY=your_quicknode_ws_key
+ALCHEMY_WEBSOCKET_KEY=your_alchemy_ws_key_here
+QUICKNODE_WEBSOCKET_KEY=your_quicknode_ws_key_here
 
 # App
 NEXT_PUBLIC_APP_URL=https://your-domain.com

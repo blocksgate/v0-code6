@@ -4,7 +4,6 @@ import { useEffect, useState } from "react"
 import { DashboardLayout } from "@/components/dashboard/layout"
 import { PerformanceMetrics } from "@/components/analytics/performance-metrics"
 import { TradeHistory } from "@/components/analytics/trade-history"
-import { PerformanceCharts } from "@/components/analytics/performance-charts"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   LineChart,
@@ -75,8 +74,6 @@ export default function AnalyticsPage() {
         </div>
 
         <PerformanceMetrics />
-
-        <PerformanceCharts />
 
         <div className="grid lg:grid-cols-2 gap-6">
           <Card className="bg-card border-border">

@@ -72,14 +72,14 @@ High-availability RPC infrastructure with automatic failover:
 ZX_API_KEY=your_0x_api_key_here
 
 # RPC Providers (Optional - auto-fallback if not provided)
-NEXT_PUBLIC_ALCHEMY_KEY=your_alchemy_key
-NEXT_PUBLIC_CHAINSTACK_KEY=your_chainstack_key
-NEXT_PUBLIC_INFURA_KEY=your_infura_key
-NEXT_PUBLIC_QUICKNODE_KEY=your_quicknode_key
-NEXT_PUBLIC_ANKR_KEY=your_ankr_key
+NEXT_PUBLIC_ALCHEMY_KEY=your_alchemy_key_here
+NEXT_PUBLIC_CHAINSTACK_KEY=your_chainstack_key_here
+NEXT_PUBLIC_INFURA_KEY=your_infura_key_here
+NEXT_PUBLIC_QUICKNODE_KEY=your_quicknode_key_here
+NEXT_PUBLIC_ANKR_KEY=your_ankr_key_here
 
 # WalletConnect (NEW)
-NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_walletconnect_project_id
+NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_walletconnect_project_id_here
 
 # Application
 NEXT_PUBLIC_APP_URL=https://your-domain.com

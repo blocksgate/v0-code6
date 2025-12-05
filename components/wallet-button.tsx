@@ -12,23 +12,9 @@ export function WalletButton() {
       disconnect()
     } else {
       try {
-        // Check if MetaMask is available
-        if (typeof window !== "undefined" && window.ethereum) {
-          await connect("metamask")
-        } else {
-          // MetaMask not installed - set error message
-          console.error("[WalletButton] MetaMask not installed")
-          // Error will be set by connect function when it throws
-          // But we need to handle this case separately
-          try {
-            await connect("metamask") // This will throw an error
-          } catch (connectError) {
-            // Error is handled in connect function and set in context
-            console.error("[WalletButton] Connection failed:", connectError)
-          }
-        }
+        await connect("demo")
       } catch (error) {
-        console.error("[WalletButton] Unexpected error:", error)
+        console.error("[v0] Connection error:", error)
       }
     }
   }

@@ -13,31 +13,12 @@ export const config = {
     apiKey: process.env.ZX_API_KEY || "",
     baseUrl: "https://api.0x.org",
   },
-  chainId: 1, // Default to Ethereum mainnet
 
   // RPC Providers
   rpc: {
     alchemy: process.env.ALCHEMY_API_KEY || "",
     infura: process.env.INFURA_API_KEY || "",
     quicknode: process.env.QUICKNODE_API_KEY || "",
-  },
-
-  // Flashbots Configuration
-  flashbots: {
-    // Flashbots Protect RPC for MEV-protected transactions
-    // Default URL with useMempool=true for public mempool access
-    // You can customize with builders and other parameters
-    // Recommended: Use the advanced URL with all builders for better MEV protection
-    protectRpcUrl: process.env.FLASHBOTS_PROTECT_RPC_URL || 
-      "https://rpc.flashbots.net?builder=f1b.io&builder=rsync&builder=beaverbuild.org&builder=builder0x69&builder=Titan&builder=EigenPhi&builder=boba-builder&builder=Gambit+Labs&builder=payload&builder=Loki&builder=BuildAI&builder=JetBuilder&builder=tbuilder&builder=penguinbuild&builder=bobthebuilder&builder=BTCS&builder=bloXroute&builder=Blockbeelder&builder=Quasar&builder=Eureka&useMempool=true&hint=default_logs&refund=0x47f9018d3119b6c23538ba932f99e2a966bab52c%3A90&originId=flashbots",
-    // Custom mempool RPC (optional) - for monitoring public mempool
-    // If not set, uses protectRpcUrl
-    mempoolRpcUrl: process.env.FLASHBOTS_MEMPOOL_RPC_URL || 
-      process.env.FLASHBOTS_PROTECT_RPC_URL || 
-      "https://rpc.flashbots.net?useMempool=true",
-    // Enable Flashbots mempool monitoring (default: true if URL is configured)
-    enableMempoolMonitoring: process.env.FLASHBOTS_ENABLE_MEMPOOL !== "false" && 
-      (!!process.env.FLASHBOTS_PROTECT_RPC_URL || process.env.FLASHBOTS_ENABLE_MEMPOOL === "true"),
   },
 
   // WalletConnect
@@ -81,8 +62,7 @@ export const config = {
 }
 
 function buildRpcUrl(baseUrl: string, chainName: string): string {
-  // Access environment variable directly to avoid circular dependency
-  const alchemyKey = process.env.ALCHEMY_API_KEY || process.env.NEXT_PUBLIC_ALCHEMY_KEY || ""
+  const alchemyKey = config.rpc.alchemy
   if (alchemyKey) {
     return `${baseUrl}/${alchemyKey}`
   }
@@ -118,11 +98,6 @@ export function validateConfig(): string[] {
   const hasRpc = config.rpc.alchemy || config.rpc.infura || config.rpc.quicknode
   if (!hasRpc) {
     console.warn("No RPC provider configured - using public endpoints")
-  }
-
-  // Flashbots is optional but recommended for MEV protection
-  if (config.flashbots.enableMempoolMonitoring && !config.flashbots.protectRpcUrl) {
-    console.warn("Flashbots mempool monitoring enabled but FLASHBOTS_PROTECT_RPC_URL not configured")
   }
 
   return errors

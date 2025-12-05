@@ -27,8 +27,8 @@ export async function GET(request: NextRequest) {
     if (error) throw error
 
     // Calculate totals
-    const totalUsdValue = data?.reduce((sum: any, token: { usd_value: any }) => sum + (token.usd_value || 0), 0) || 0
-    const totalCostBasis = data?.reduce((sum: any, token: { cost_basis: any }) => sum + (token.cost_basis || 0), 0) || 0
+    const totalUsdValue = data?.reduce((sum, token) => sum + (token.usd_value || 0), 0) || 0
+    const totalCostBasis = data?.reduce((sum, token) => sum + (token.cost_basis || 0), 0) || 0
     const totalUnrealizedPL = totalUsdValue - totalCostBasis
 
     return NextResponse.json({

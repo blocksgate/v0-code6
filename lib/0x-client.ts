@@ -30,12 +30,11 @@ export class ZxClient {
   private baseUrl: string
 
   constructor() {
-    // Check both server-side and client-side env vars
-    this.apiKey = config.zxProtocol.apiKey || process.env.NEXT_PUBLIC_0X_API_KEY || ""
+    this.apiKey = config.zxProtocol.apiKey
     this.baseUrl = config.zxProtocol.baseUrl
 
     if (!this.apiKey) {
-      console.warn("[0x] API key not configured - swap functionality will be limited. Set ZX_API_KEY or NEXT_PUBLIC_0X_API_KEY in environment variables.")
+      console.warn("[0x] API key not configured - swap functionality will be limited")
     }
   }
 
@@ -45,132 +44,42 @@ export class ZxClient {
     buyToken: string,
     sellAmount: string,
     slippagePercentage?: number,
-    method?: "permit2" | "allowance-holder",
-    taker?: string // Optional: User address for better quote accuracy
   ): Promise<ZxQuote> {
-    // Validate inputs
-    if (!sellToken || !buyToken || !sellAmount) {
-      throw new Error("Missing required parameters: sellToken, buyToken, sellAmount")
-    }
-
-    // Convert ETH placeholder to WETH for 0x API if needed
-    // 0x API uses WETH address for native ETH
-    const ETH_PLACEHOLDER = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
-    const WETH_ADDRESS = chainId === 1 
-      ? "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" // Mainnet WETH
-      : "0x4200000000000000000000000000000000000006" // Base/OP WETH
-    
-    const normalizedSellToken = sellToken.toLowerCase() === ETH_PLACEHOLDER.toLowerCase() 
-      ? WETH_ADDRESS 
-      : sellToken
-    const normalizedBuyToken = buyToken.toLowerCase() === ETH_PLACEHOLDER.toLowerCase() 
-      ? WETH_ADDRESS 
-      : buyToken
-
-    // Validate sell amount is greater than 0
-    try {
-      const amount = BigInt(sellAmount)
-      if (amount <= 0) {
-        throw new Error("Sell amount must be greater than 0")
-      }
-    } catch (error) {
-      throw new Error(`Invalid sell amount: ${sellAmount}`)
-    }
-
     const params = new URLSearchParams({
       chainId: chainId.toString(),
-      sellToken: normalizedSellToken,
-      buyToken: normalizedBuyToken,
+      sellToken,
+      buyToken,
       sellAmount,
+      ...(slippagePercentage && { slippagePercentage: slippagePercentage.toString() }),
     })
 
-    // Add taker address if provided (recommended for better quote accuracy)
-    if (taker && /^0x[a-fA-F0-9]{40}$/.test(taker)) {
-      params.set("taker", taker)
-    }
-
-    // Use v2 endpoints (0x API v2 compliance)
-    // Default to allowance-holder for standard swaps
-    let endpoint = "/swap/allowance-holder/quote"
-    if (method === "permit2") {
-      endpoint = "/swap/permit2/quote"
-    } else if (method === "allowance-holder") {
-      endpoint = "/swap/allowance-holder/quote"
-    }
-
-    // Convert slippagePercentage to slippageBps (basis points)
-    // v2 API uses basis points (0-10000) instead of percentage
-    // Default: 100 bps (1%) if not specified
-    const slippageBps = slippagePercentage ? Math.round(slippagePercentage * 100) : 100
-    if (slippageBps >= 0 && slippageBps <= 10000) {
-      params.set("slippageBps", slippageBps.toString())
-    }
-
-    const url = `${this.baseUrl}${endpoint}?${params}`
-
-    try {
-      const response = await fetch(url, {
-        headers: {
-          ...(this.apiKey && { "0x-api-key": this.apiKey }),
-          "0x-version": "v2", // ✅ 0x API v2 compliance
-          "Content-Type": "application/json",
-        },
-      })
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        let errorMessage = `0x API error: ${errorText}`
-        
-        // Provide more helpful error messages
-        if (response.status === 400) {
-          try {
-            const errorJson = JSON.parse(errorText)
-            if (errorJson.message?.includes("no Route matched")) {
-              errorMessage = `No swap route available for ${sellToken} -> ${buyToken}. This pair may have insufficient liquidity or the tokens may not be supported.`
-            } else {
-              errorMessage = `Invalid request: ${errorJson.message || errorText}`
-            }
-          } catch {
-            // If parsing fails, use the original error text
-          }
-        } else if (response.status === 403) {
-          errorMessage = "0x API key is invalid or missing. Please configure NEXT_PUBLIC_0X_API_KEY in your environment variables."
-        } else if (response.status === 429) {
-          errorMessage = "0x API rate limit exceeded. Please wait before making more requests."
-        }
-        
-        throw new Error(errorMessage)
-      }
-
-      return response.json()
-    } catch (error) {
-      // Re-throw if it's already an Error with a message
-      if (error instanceof Error) {
-        throw error
-      }
-      throw new Error(`Failed to get quote from 0x API: ${error}`)
-    }
-  }
-
-  async getPrices(chainId: number, tokens: string[]): Promise<Record<string, string>> {
-    // Note: This method may need to be updated based on 0x API v2 pricing endpoints
-    // For now, we'll use the allowance-holder price endpoint
-    // You may need to call this for each token pair or use a different endpoint
-    const params = new URLSearchParams({
-      chainId: chainId.toString(),
-    })
-
-    // 0x API v2 doesn't have a single endpoint for multiple token prices
-    // You need to call /swap/allowance-holder/price for each token pair
-    // For simplicity, this is a placeholder that would need to be implemented
-    // based on your specific use case
-    const url = `${this.baseUrl}/swap/allowance-holder/price?${params}`
+    const url = `${this.baseUrl}/swap/v1/quote?${params}`
 
     const response = await fetch(url, {
       headers: {
-        ...(this.apiKey && { "0x-api-key": this.apiKey }),
-        "0x-version": "v2", // ✅ 0x API v2 compliance
-        "Content-Type": "application/json",
+        "0x-api-key": this.apiKey,
+      },
+    })
+
+    if (!response.ok) {
+      const error = await response.text()
+      throw new Error(`0x API error: ${error}`)
+    }
+
+    return response.json()
+  }
+
+  async getPrices(chainId: number, tokens: string[]): Promise<Record<string, string>> {
+    const params = new URLSearchParams({
+      chainId: chainId.toString(),
+      tokens: tokens.join(","),
+    })
+
+    const url = `${this.baseUrl}/swap/v1/price?${params}`
+
+    const response = await fetch(url, {
+      headers: {
+        "0x-api-key": this.apiKey,
       },
     })
 
@@ -180,31 +89,6 @@ export class ZxClient {
 
     const data = await response.json()
     return data.data || {}
-  }
-
-  async executeTrade(
-    chainId: number,
-    userAddress: string,
-    sellToken: string,
-    buyToken: string,
-    sellAmount: string,
-    slippagePercentage?: number
-  ) {
-    const quote = await this.getQuote(
-      chainId,
-      sellToken,
-      buyToken,
-      sellAmount,
-      slippagePercentage
-    );
-
-    return {
-      to: quote.to,
-      data: quote.data,
-      value: quote.value,
-      gas: quote.gas,
-      gasPrice: quote.gasPrice,
-    };
   }
 }
 
