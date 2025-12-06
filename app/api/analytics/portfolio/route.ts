@@ -32,13 +32,13 @@ export async function GET(request: NextRequest) {
 
     // Calculate metrics
     const totalTrades = trades?.length || 0
-    const winningTrades = trades?.filter((t) => t.profit_loss && t.profit_loss > 0).length || 0
+    const winningTrades = trades?.filter((t: { profit_loss: number }) => t.profit_loss && t.profit_loss > 0).length || 0
     const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0
-    const totalPnL = trades?.reduce((sum, t) => sum + (t.profit_loss || 0), 0) || 0
+    const totalPnL = trades?.reduce((sum: number, t: { profit_loss: number }) => sum + (t.profit_loss || 0), 0) || 0
 
     return NextResponse.json({
-      portfolio_value: portfolio?.reduce((sum, t) => sum + (t.usd_value || 0), 0) || 0,
-      total_cost_basis: portfolio?.reduce((sum, t) => sum + (t.cost_basis || 0), 0) || 0,
+      portfolio_value: portfolio?.reduce((sum: number, t: { usd_value: number }) => sum + (t.usd_value || 0), 0) || 0,
+      total_cost_basis: portfolio?.reduce((sum: number, t: { cost_basis: number }) => sum + (t.cost_basis || 0), 0) || 0,
       unrealized_pnl: totalPnL,
       total_trades: totalTrades,
       winning_trades: winningTrades,

@@ -62,7 +62,8 @@ export const config = {
 }
 
 function buildRpcUrl(baseUrl: string, chainName: string): string {
-  const alchemyKey = config.rpc.alchemy
+  // Access environment variable directly to avoid circular dependency
+  const alchemyKey = process.env.ALCHEMY_API_KEY || process.env.NEXT_PUBLIC_ALCHEMY_KEY || ""
   if (alchemyKey) {
     return `${baseUrl}/${alchemyKey}`
   }
